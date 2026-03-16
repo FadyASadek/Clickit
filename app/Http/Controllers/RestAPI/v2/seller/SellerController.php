@@ -28,11 +28,14 @@ class SellerController extends Controller
         $data = Helpers::get_seller_by_token($request);
 
         if ($data['success'] == 1) {
+            // PERF-58: Use whereHas subquery instead of plucking all product IDs into PHP memory
             $seller = $data['data'];
-            $product_ids = Product::where(['user_id' => $seller['id'], 'added_by' => 'seller'])->pluck('id')->toArray();
             $shop = Shop::where(['seller_id' => $seller['id']])->first();
-            $shop['rating'] = round(Review::whereIn('product_id', $product_ids)->avg('rating'), 3);
-            $shop['rating_count'] = Review::whereIn('product_id', $product_ids)->count();
+            $reviewQuery = Review::whereHas('product', function ($query) use ($seller) {
+                $query->where('added_by', 'seller')->where('user_id', $seller['id']);
+            });
+            $shop['rating'] = round((clone $reviewQuery)->avg('rating'), 3);
+            $shop['rating_count'] = (clone $reviewQuery)->count();
         } else {
             return response()->json([
                 'auth-001' => translate('Your existing session token does not authorize you any more')

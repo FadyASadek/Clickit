@@ -20,6 +20,8 @@ use App\Models\Color;
 use App\Models\DealOfTheDay;
 use App\Models\DeliveryMan;
 use App\Models\DigitalProductVariation;
+use App\Models\DigitalProductAuthor;
+use App\Models\DigitalProductPublishingHouse;
 use App\Models\FlashDealProduct;
 use App\Models\OrderDetail;
 use App\Models\Product;
@@ -89,37 +91,18 @@ class ProductController extends Controller
         $publishingHouseIds = json_decode($request['publishing_house_ids'] ?? '', true);
         $authorIds = json_decode($request['author_ids'] ?? '', true);
 
-        $publishingHouseList = PublishingHouse::with(['publishingHouseProducts'])
-            ->whereHas('publishingHouseProducts.product', function ($query) {
-                return $query->active();
-            })
-            ->withCount(['publishingHouseProducts' => function ($query) {
-                return $query->whereHas('product', function ($query) {
-                    return $query->active();
-                });
-            }])->get();
-
-        $productIdsForPublisher = [];
-        $publishingHouseList->each(function ($publishingHouseGroup) use (&$productIdsForPublisher) {
-            $publishingHouseGroup?->publishingHouseProducts?->each(function ($publishingHouse) use (&$productIdsForPublisher) {
-                $productIdsForPublisher[] = $publishingHouse->product_id;
-            });
-        });
+        // PERF-62: Use DB-level pluck instead of loading all PublishingHouse models into memory
+        $productIdsForPublisher = DigitalProductPublishingHouse::whereHas('product', function ($query) {
+            return $query->active();
+        })->pluck('product_id')->unique()->toArray();
 
         $productIdsForUnknownPublisher = Product::active()->where(['product_type' => 'digital'])->whereNotIn('id', $productIdsForPublisher)->pluck('id')->toArray();
 
-        $authorList = Author::withCount(['digitalProductAuthor' => function ($query) {
-            return $query->whereHas('product', function ($query) {
-                return $query->active();
-            });
-        }])->get();
+        // PERF-62: Use DB-level pluck instead of loading all Author models into memory
+        $productIdsForAuthor = DigitalProductAuthor::whereHas('product', function ($query) {
+            return $query->active();
+        })->pluck('product_id')->unique()->toArray();
 
-        $productIdsForAuthor = [];
-        $authorList->each(function ($authorGroup) use (&$productIdsForAuthor) {
-            $authorGroup?->digitalProductAuthor?->each(function ($authorItem) use (&$productIdsForAuthor) {
-                $productIdsForAuthor[] = $authorItem->product_id;
-            });
-        });
         $productIdsForUnknownAuthor = Product::active()->where(['product_type' => 'digital'])->whereNotIn('id', $productIdsForAuthor)->pluck('id')->toArray();
 
         $products = Product::when($request['offer_type'] == 'clearance_sale', function ($query) {
@@ -170,18 +153,11 @@ class ProductController extends Controller
                 return $query->whereDate('created_at', '<=', Carbon::createFromFormat('m/d/Y h:i:s A', $request['end_date']));
             })
             ->when($request->has('publishing_house_ids') && !empty($publishingHouseIds), function ($query) use ($request, $productIdsForUnknownPublisher, $publishingHouseIds) {
-                $publishingHouseList = PublishingHouse::whereIn('id', $publishingHouseIds)->with(['publishingHouseProducts'])->withCount(['publishingHouseProducts' => function ($query) {
-                    return $query->whereHas('product', function ($query) {
+                // PERF-62: Use DB-level pluck instead of loading PublishingHouse models
+                $publishingHouseProductIds = DigitalProductPublishingHouse::whereIn('publishing_house_id', $publishingHouseIds)
+                    ->whereHas('product', function ($query) {
                         return $query->active();
-                    });
-                }])->get();
-
-                $publishingHouseProductIds = [];
-                $publishingHouseList->each(function ($publishingHouseGroup) use (&$publishingHouseProductIds) {
-                    $publishingHouseGroup?->publishingHouseProducts?->each(function ($publishingHouse) use (&$publishingHouseProductIds) {
-                        $publishingHouseProductIds[] = $publishingHouse->product_id;
-                    });
-                });
+                    })->pluck('product_id')->unique()->toArray();
 
                 if (in_array(0, $publishingHouseIds)) {
                     $publishingHouseProductIds = array_merge($publishingHouseProductIds, $productIdsForUnknownPublisher);
@@ -190,18 +166,12 @@ class ProductController extends Controller
                 return $query->where(['product_type' => 'digital'])->whereIn('id', $publishingHouseProductIds);
             })
             ->when($request->has('author_ids') && !empty($authorIds) && is_array($authorIds), function ($query) use ($request, $productIdsForUnknownAuthor, $authorIds) {
-                $authorList = Author::whereIn('id', $authorIds)->withCount(['digitalProductAuthor' => function ($query) {
-                    return $query->whereHas('product', function ($query) {
+                // PERF-62: Use DB-level pluck instead of loading Author models
+                $authorProductIds = DigitalProductAuthor::whereIn('author_id', $authorIds)
+                    ->whereHas('product', function ($query) {
                         return $query->active();
-                    });
-                }])->get();
+                    })->pluck('product_id')->unique()->toArray();
 
-                $authorProductIds = [];
-                $authorList->each(function ($authorGroup) use (&$authorProductIds) {
-                    $authorGroup?->digitalProductAuthor?->each(function ($authorItem) use (&$authorProductIds) {
-                        $authorProductIds[] = $authorItem->product_id;
-                    });
-                });
                 if (in_array(0, $authorIds)) {
                     $authorProductIds = array_merge($authorProductIds, $productIdsForUnknownAuthor);
                 }

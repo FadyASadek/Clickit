@@ -16,12 +16,29 @@ class BannerController extends Controller
     public function getBannerList(Request $request): JsonResponse
     {
         $banners = $this->cacheBannerTable();
+        
         $productIds = [];
+        foreach ($banners as $banner) {
+            if ($banner['resource_type'] == 'product') {
+                $productIds[] = $banner['resource_id'];
+            }
+        }
+        $productIds = array_unique($productIds);
+
+        $products = [];
+        if (!empty($productIds)) {
+            $products = Product::whereIn('id', $productIds)
+                ->with(['rating', 'tags'])
+                ->get()
+                ->keyBy('id');
+        }
+
+        $processedProductIds = [];
         $bannerData = [];
         foreach ($banners as $banner) {
-            if ($banner['resource_type'] == 'product' && !in_array($banner['resource_id'], $productIds)) {
-                $productIds[] = $banner['resource_id'];
-                $product = Product::find($banner['resource_id']);
+            if ($banner['resource_type'] == 'product' && !in_array($banner['resource_id'], $processedProductIds)) {
+                $processedProductIds[] = $banner['resource_id'];
+                $product = $products[$banner['resource_id']] ?? null;
                 $banner['product'] = Helpers::product_data_formatting($product);
             }
             $bannerData[] = $banner;

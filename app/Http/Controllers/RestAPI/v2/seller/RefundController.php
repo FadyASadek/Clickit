@@ -43,7 +43,8 @@ class RefundController extends Controller
                 });
                 $query_param = ['search' => $request['search']];
             }
-            $refund_list = $refund_list->latest()->get();
+            // PERF-61: Cap results to prevent memory exhaustion while preserving raw array JSON contract
+            $refund_list = $refund_list->latest()->take(100)->get();
             $refund_list = $refund_list->map(function($data){
                 $data['images'] = json_decode($data['images']);
                 return $data;

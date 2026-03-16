@@ -38,8 +38,12 @@ class OrderController extends Controller
             ], 401);
         }
 
-        $order_ids = OrderDetail::where(['seller_id' => $seller['id']])->pluck('order_id')->toArray();
-        $orders = Order::with(['customer', 'shipping'])->where(['seller_is' => 'seller'])->whereIn('id', $order_ids)->get();
+        // PERF-57: Cap results to prevent memory exhaustion while preserving raw array JSON contract
+        $order_ids = OrderDetail::where(['seller_id' => $seller['id']])->pluck('order_id')->unique()->toArray();
+        $orders = Order::with(['customer', 'shipping'])->where(['seller_is' => 'seller'])->whereIn('id', $order_ids)
+            ->latest()
+            ->take(100)
+            ->get();
         $orders->map(function ($data) {
             $data['billing_address_data'] = json_decode($data['billing_address_data']);
             return $data;

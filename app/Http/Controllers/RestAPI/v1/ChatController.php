@@ -132,21 +132,46 @@ class ChatController extends Controller
             ->distinct()
             ->get()
             ->toArray();
-        $unique_chat_ids = call_user_func_array('array_merge', $unique_chat_ids);
+        if (!empty($unique_chat_ids)) {
+            $unique_chat_ids = call_user_func_array('array_merge', $unique_chat_ids);
+        } else {
+            $unique_chat_ids = [];
+        }
+        
         $chats = array();
+        
         if ($unique_chat_ids) {
-            foreach ($unique_chat_ids as $unique_chat_id) {
-                if (!is_array($unique_chat_id)) {
-                    $user_chatting = Chatting::with([$with_param])
-                        ->where(['user_id' => $request->user()->id, $id_param => $unique_chat_id])
-                        ->whereNotNull($id_param)
-                        ->latest()
-                        ->first();
+            $flat_ids = [];
+            foreach ($unique_chat_ids as $id) {
+                if (!is_array($id)) {
+                    $flat_ids[] = $id;
+                }
+            }
+            $flat_ids = array_unique($flat_ids);
+
+            if (!empty($flat_ids)) {
+                $chattings = Chatting::with([$with_param])
+                    ->where('user_id', $request->user()->id)
+                    ->whereIn($id_param, $flat_ids)
+                    ->whereNotNull($id_param)
+                    ->latest()
+                    ->get()
+                    ->groupBy($id_param);
+
+                $unseen_counts = Chatting::where('user_id', $request->user()->id)
+                    ->whereIn($id_param, $flat_ids)
+                    ->where('seen_by_customer', '0')
+                    ->selectRaw("{$id_param}, count(*) as count")
+                    ->groupBy($id_param)
+                    ->pluck('count', $id_param);
+
+                foreach ($flat_ids as $unique_chat_id) {
+                    $user_chatting = isset($chattings[$unique_chat_id]) ? $chattings[$unique_chat_id]->first() : null;
 
                     if ($user_chatting) {
-                        $user_chatting->unseen_message_count = Chatting::where(['user_id' => $user_chatting->user_id, $id_param => $user_chatting->$id_param, 'seen_by_customer' => '0'])->count();
+                        $user_chatting->unseen_message_count = isset($unseen_counts[$user_chatting->$id_param]) ? $unseen_counts[$user_chatting->$id_param] : 0;
+                        $chats[] = $user_chatting;
                     }
-                    $chats[] = $user_chatting;
                 }
             }
         }

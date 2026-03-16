@@ -52,20 +52,18 @@ class SellerController extends Controller
     {
         $seller = $request->seller;
 
-        $allProductids = $this->productRepo->getListWithScope(filters: ['added_by' => 'seller', 'seller_id' => $seller['id']], dataLimit: 'all')->pluck('id')->toArray();
+        // PERF-64: Use whereHas subquery and direct DB counts instead of loading all products/orders into memory
         $shop = Shop::where(['seller_id' => $seller['id']])->first();
-        $shop['rating'] = round(Review::whereIn('product_id', $allProductids)->avg('rating'), 3);
-        $shop['rating_count'] = Review::whereIn('product_id', $allProductids)->count();
+        $reviewQuery = Review::whereHas('product', function ($query) use ($seller) {
+            $query->where('added_by', 'seller')->where('user_id', $seller['id']);
+        });
+        $shop['rating'] = round((clone $reviewQuery)->avg('rating'), 3);
+        $shop['rating_count'] = (clone $reviewQuery)->count();
 
         $shop['stock_limit'] = $seller['stock_limit'];
-        $shop['total_products'] = count($allProductids);
-        $shop['total_orders'] = $this->orderRepo->getListWhere(filters: ['seller_is' => 'seller', 'seller_id' => $seller['id']], dataLimit: 'all')->count();;
-        $shop['total_reviews'] = $this->reviewRepo->getListWhereIn(filters: [
-            'seller_is' => 'seller',
-            'seller_id' => $seller['id'],
-        ], whereInFilters: [
-            'product_id' => !empty($allProductids) ? $allProductids : [null],
-        ], dataLimit: 'all')->count();
+        $shop['total_products'] = Product::where(['user_id' => $seller['id'], 'added_by' => 'seller'])->count();
+        $shop['total_orders'] = Order::where(['seller_is' => 'seller', 'seller_id' => $seller['id']])->count();
+        $shop['total_reviews'] = (clone $reviewQuery)->count();
 
         return response()->json($shop, 200);
     }
@@ -441,23 +439,20 @@ class SellerController extends Controller
         $seller = $request->seller;
         $from = Carbon::now()->startOfYear()->format('Y-m-d');
         $to = Carbon::now()->endOfYear()->format('Y-m-d');
-        $seller_data = '';
+
+        // PERF-65: Use pluck for direct keyed lookup instead of get()->toArray() + nested loop
         $seller_earnings = OrderTransaction::where([
             'seller_is' => 'seller',
             'seller_id' => $seller['id'],
             'status' => 'disburse'
         ])->select(
             DB::raw('IFNULL(sum(seller_amount),0) as sums'),
-            DB::raw('YEAR(created_at) year, MONTH(created_at) month')
-        )->whereBetween('created_at', [$from, $to])->groupby('year', 'month')->get()->toArray();
+            DB::raw('MONTH(created_at) as month')
+        )->whereBetween('created_at', [$from, $to])->groupBy('month')->pluck('sums', 'month');
+
+        $seller_data = '';
         for ($inc = 1; $inc <= 12; $inc++) {
-            $default = 0;
-            foreach ($seller_earnings as $match) {
-                if ($match['month'] == $inc) {
-                    $default = $match['sums'];
-                }
-            }
-            $seller_data .= $default . ',';
+            $seller_data .= ($seller_earnings[$inc] ?? 0) . ',';
         }
 
         return response()->json($seller_data, 200);
@@ -469,23 +464,19 @@ class SellerController extends Controller
         $from = Carbon::now()->startOfYear()->format('Y-m-d');
         $to = Carbon::now()->endOfYear()->format('Y-m-d');
 
-        $commission_data = '';
+        // PERF-65: Use pluck for direct keyed lookup instead of get()->toArray() + nested loop
         $commission_earnings = OrderTransaction::where([
             'seller_is' => 'seller',
             'seller_id' => $seller['id'],
             'status' => 'disburse'
         ])->select(
             DB::raw('IFNULL(sum(admin_commission),0) as sums'),
-            DB::raw('YEAR(created_at) year, MONTH(created_at) month')
-        )->whereBetween('created_at', [$from, $to])->groupby('year', 'month')->get()->toArray();
+            DB::raw('MONTH(created_at) as month')
+        )->whereBetween('created_at', [$from, $to])->groupBy('month')->pluck('sums', 'month');
+
+        $commission_data = '';
         for ($inc = 1; $inc <= 12; $inc++) {
-            $default = 0;
-            foreach ($commission_earnings as $match) {
-                if ($match['month'] == $inc) {
-                    $default = $match['sums'];
-                }
-            }
-            $commission_data .= $default . ',';
+            $commission_data .= ($commission_earnings[$inc] ?? 0) . ',';
         }
 
         return response()->json($commission_data, 200);

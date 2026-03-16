@@ -3,7 +3,11 @@
 namespace App\Http\Controllers\Admin\Customer;
 
 use Carbon\Carbon;
+use App\Models\User;
+use App\Models\Order;
+use App\Models\Subscription;
 use App\Enums\WebConfigKey;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use App\Traits\PaginatorTrait;
@@ -103,7 +107,8 @@ class CustomerController extends BaseController
             dataLimit: getWebConfig(name: WebConfigKey::PAGINATION_LIMIT),
             appends: $request->all(),
         );
-        $totalCustomers = $this->customerRepo->getListWhereBetween(filters: ['avoid_walking_customer' => 1], dataLimit: 'all')->count();
+        // PERF-16: Use DB-level count instead of loading all customers into memory
+        $totalCustomers = User::whereNot('email', 'walking@customer.com')->count();
         return view('admin-views.customer.list', [
             'customers' => $customers,
             'totalCustomers' => $totalCustomers,
@@ -131,26 +136,25 @@ class CustomerController extends BaseController
     {
         $customer = $this->customerRepo->getFirstWhere(params: ['id' => $id], relations: ['addresses']);
         if (isset($customer)) {
-            $orders = $this->orderRepo->getListWhere(orderBy: ['id' => 'desc'], searchValue: $request['searchValue'], filters: ['customer_id' => $id, 'is_guest' => '0'], dataLimit: 'all');
+            // PERF-15: Use DB-level GROUP BY instead of loading all orders into memory
+            $statusCounts = Order::where(['customer_id' => $id, 'is_guest' => 0])
+                ->select('order_status', DB::raw('count(*) as count'))
+                ->groupBy('order_status')
+                ->pluck('count', 'order_status');
+
+            $ongoingStatuses = ['pending', 'confirmed', 'processing', 'out_for_delivery'];
+            $ongoing = $statusCounts->only($ongoingStatuses)->sum();
+            $totalOrder = $statusCounts->sum();
+
             $orderStatusArray = [
-                'total_order' => 0,
-                'ongoing' => 0,
-                'completed' => 0,
-                'returned' => 0,
+                'total_order' => $totalOrder,
+                'ongoing' => $ongoing,
+                'completed' => $statusCounts->get('delivered', 0),
+                'returned' => $statusCounts->get('returned', 0),
                 'refunded' => count($customer->refundOrders),
-                'canceled' => 0,
-                'failed' => 0,
+                'canceled' => $statusCounts->get('canceled', 0),
+                'failed' => $statusCounts->get('failed', 0),
             ];
-            $orders?->map(function ($order) use (&$orderStatusArray) {
-                if (in_array($order->order_status, ['pending', 'confirmed', 'processing', 'out_for_delivery'])) {
-                    $orderStatusArray['ongoing']++;
-                } elseif ($order->order_status == 'delivered') {
-                    $orderStatusArray['completed']++;
-                } else {
-                    $orderStatusArray[$order->order_status]++;
-                }
-                $orderStatusArray['total_order']++;
-            });
             $orders = $this->orderRepo->getListWhere(orderBy: ['id' => 'desc'], searchValue: $request['searchValue'], filters: ['customer_id' => $id, 'is_guest' => '0'], dataLimit: getWebConfig('pagination_limit'));
             return view('admin-views.customer.customer-view', compact('customer', 'orders', 'orderStatusArray'));
         }
@@ -208,7 +212,8 @@ class CustomerController extends BaseController
             dataLimit: getWebConfig(name: WebConfigKey::PAGINATION_LIMIT),
             appends: $request->all(),
         );
-        $totalSubscribers = $this->subscriptionRepo->getListWhere(dataLimit: 'all')->count();
+        // PERF-17: Use DB-level count instead of loading all subscriptions into memory
+        $totalSubscribers = Subscription::count();
         return view('admin-views.customer.subscriber-list', compact('subscriberList', 'totalSubscribers'));
     }
 

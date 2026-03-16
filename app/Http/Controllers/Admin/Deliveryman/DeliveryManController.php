@@ -6,6 +6,7 @@ use App\Contracts\Repositories\DeliveryManRepositoryInterface;
 use App\Contracts\Repositories\OrderRepositoryInterface;
 use App\Contracts\Repositories\OrderStatusHistoryRepositoryInterface;
 use App\Contracts\Repositories\ReviewRepositoryInterface;
+use App\Models\Review;
 use App\Enums\ViewPaths\Admin\DeliveryMan;
 use App\Enums\WebConfigKey;
 use App\Enums\ExportFileNames\Admin\DeliveryMan as DeliveryManExport;
@@ -22,6 +23,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class DeliveryManController extends Controller
@@ -234,28 +236,44 @@ class DeliveryManController extends Controller
             return redirect(route('admin.delivery-man.list'));
         }
 
-        $reviews_collection = $this->reviewRepo->getListWhere(
-            orderBy: ['updated_at'=>'desc'],
-            searchValue: $request['searchValue'],
-            filters: [
-                'delivery_man_id' => $id,
-                'from' => $request['from_date'],
-                'to' => $request['to_date'],
-                'rating' => $request['rating'],
-            ],
-            dataLimit: 'all',
-        );
+        // PERF-20: Build a shared query scope, then use DB-level paginate/avg/groupBy instead of loading all into memory
+        $reviewBaseQuery = Review::where('delivery_man_id', $id)
+            ->when($request['searchValue'], function ($query) use ($request) {
+                $query->whereHas('order', function ($q) use ($request) {
+                    $q->where('id', 'like', "%{$request['searchValue']}%");
+                });
+            })
+            ->when($request['from_date'] && $request['to_date'], function ($query) use ($request) {
+                $query->whereBetween('created_at', [$request['from_date'] . ' 00:00:00', $request['to_date'] . ' 23:59:59']);
+            })
+            ->when($request['rating'], function ($query) use ($request) {
+                $query->where('rating', $request['rating']);
+            });
+
+        // DB-level pagination for the reviews list
+        $reviews = (clone $reviewBaseQuery)->orderBy('updated_at', 'desc')
+            ->paginate(getWebConfig(name: WebConfigKey::PAGINATION_LIMIT));
+
+        // DB-level aggregations (count + avg)
+        $total = (clone $reviewBaseQuery)->count();
+        $averageRating = (clone $reviewBaseQuery)->avg('rating');
+
+        // DB-level per-star counts via GROUP BY
+        $ratingCounts = (clone $reviewBaseQuery)
+            ->select('rating', DB::raw('count(*) as count'))
+            ->groupBy('rating')
+            ->pluck('count', 'rating');
 
         return view('admin-views.delivery-man.rating', [
             'deliveryMan' => $deliveryMan,
-            'reviews' => $reviews_collection->paginate(getWebConfig(name: WebConfigKey::PAGINATION_LIMIT)),
-            'total' => $reviews_collection->count(),
-            'averageRating' => $reviews_collection->avg('rating'),
-            'one' => $reviews_collection->where('rating', 1)->count(),
-            'two' => $reviews_collection->where('rating', 2)->count(),
-            'three' => $reviews_collection->where('rating', 3)->count(),
-            'four' => $reviews_collection->where('rating', 4)->count(),
-            'five' => $reviews_collection->where('rating', 5)->count(),
+            'reviews' => $reviews,
+            'total' => $total,
+            'averageRating' => $averageRating,
+            'one' => $ratingCounts->get(1, 0),
+            'two' => $ratingCounts->get(2, 0),
+            'three' => $ratingCounts->get(3, 0),
+            'four' => $ratingCounts->get(4, 0),
+            'five' => $ratingCounts->get(5, 0),
         ]);
     }
 

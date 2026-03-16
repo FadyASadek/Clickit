@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\Order;
 use Carbon\Carbon;
 use App\Enums\WebConfigKey;
 use App\Utils\OrderManager;
+use App\Models\Order as OrderModel;
 use App\Exports\OrderExport;
 use App\Traits\PdfGenerator;
 use Illuminate\Http\Request;
@@ -174,7 +175,8 @@ class OrderController extends BaseController
             'seller_is' => $vendorIs,
         ];
 
-        $orders = $this->orderRepo->getListWhere(orderBy: ['id' => 'desc'], searchValue: $request['searchValue'], filters: $filters, relations: ['customer', 'seller.shop'], dataLimit: 'all');
+        // PERF-22: Eager load orderDetails to prevent N+1 queries in the map loop below
+        $orders = $this->orderRepo->getListWhere(orderBy: ['id' => 'desc'], searchValue: $request['searchValue'], filters: $filters, relations: ['customer', 'seller.shop', 'details'], dataLimit: 'all');
 
         /** order status count  */
         $status_array = [
@@ -271,7 +273,8 @@ class OrderController extends BaseController
                 'id' => [$order['id']],
             ];
             $linkedOrders = $this->orderRepo->getListWhereNotIn(filters: ['order_group_id' => $order['order_group_id']], whereNotIn: $whereNotIn, dataLimit: 'all');
-            $totalDelivered = $this->orderRepo->getListWhere(filters: ['seller_id' => $order['seller_id'], 'order_status' => 'delivered', 'order_type' => 'default_type'], dataLimit: 'all')->count();
+            // PERF-23: Use DB-level count instead of loading all delivered orders into memory
+            $totalDelivered = OrderModel::where(['seller_id' => $order['seller_id'], 'order_status' => 'delivered', 'order_type' => 'default_type'])->count();
             $shippingMethod = getWebConfig('shipping_method');
 
             $sellerId = 0;

@@ -66,9 +66,33 @@ class CartController extends Controller
                     unset($cart[$key]);
                 }
             }
+            
+            // Eager load everything needed for the loop to prevent N+1 queries
+            $productIds = $cart->pluck('product_id')->unique()->toArray();
+            $products = Product::active()->whereIn('id', $productIds)->get()->keyBy('id');
+            
+            $cartGroupIds = $cart->pluck('cart_group_id')->unique()->toArray();
+            $groupedCarts = Cart::where('product_type', 'physical')
+                ->whereIn('cart_group_id', $cartGroupIds)
+                ->get()
+                ->groupBy('cart_group_id');
+                
+            $freeDeliveryAmounts = [];
+            foreach ($cartGroupIds as $groupId) {
+                if (isset($groupedCarts[$groupId])) {
+                    $freeDeliveryAmounts[$groupId] = OrderManager::getFreeDeliveryOrderAmountArray($groupId);
+                } else {
+                    $freeDeliveryAmounts[$groupId] = [
+                        'status' => 0,
+                        'amount' => 0,
+                        'percentage' => 0,
+                        'shipping_cost_saved' => 0,
+                    ];
+                }
+            }
 
-            $cart->map(function ($data) use ($request) {
-                $product = Product::active()->find($data->product_id);
+            $cart->map(function ($data) use ($request, $products, $groupedCarts, $freeDeliveryAmounts) {
+                $product = $products[$data->product_id] ?? null;
                 if ($product) {
                     $data['is_product_available'] = 1;
                 } else {
@@ -79,17 +103,12 @@ class CartController extends Controller
 
                 $data['minimum_order_amount_info'] = OrderManager::verifyCartListMinimumOrderAmount($request, $data['cart_group_id'])['minimum_order_amount'];
 
-                $cart_group = Cart::where(['product_type' => 'physical'])->where('cart_group_id', $data['cart_group_id'])->get()->groupBy('cart_group_id');
-                if (isset($cart_group[$data['cart_group_id']])) {
-                    $data['free_delivery_order_amount'] = OrderManager::getFreeDeliveryOrderAmountArray($data['cart_group_id']);
-                } else {
-                    $data['free_delivery_order_amount'] = [
-                        'status' => 0,
-                        'amount' => 0,
-                        'percentage' => 0,
-                        'shipping_cost_saved' => 0,
-                    ];
-                }
+                $data['free_delivery_order_amount'] = $freeDeliveryAmounts[$data['cart_group_id']] ?? [
+                    'status' => 0,
+                    'amount' => 0,
+                    'percentage' => 0,
+                    'shipping_cost_saved' => 0,
+                ];
 
                 $data['product']['total_current_stock'] = isset($data['product']['current_stock']) ? $data['product']['current_stock'] : 0;
                 if (isset($data['product']['variation']) && !empty($data['product']['variation'])) {

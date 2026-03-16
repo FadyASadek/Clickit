@@ -31,7 +31,8 @@ class ProductController extends Controller
             ], 401);
         }
 
-        return response()->json(Product::where(['added_by' => 'seller', 'id' => $seller['id']])->orderBy('id', 'DESC')->get(), 200);
+        // PERF-56: Cap results to prevent memory exhaustion while preserving raw array JSON contract
+        return response()->json(Product::where(['added_by' => 'seller', 'user_id' => $seller['id']])->orderBy('id', 'DESC')->take(100)->get(), 200);
     }
 
     public function stock_out_list(Request $request)

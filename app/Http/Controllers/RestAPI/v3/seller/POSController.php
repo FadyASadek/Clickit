@@ -337,17 +337,32 @@ class POSController extends Controller
 
         $cartsTotalAmount = 0;
         $generateOrderID = self::getOrderNewId();
+
+        // PERF-63: Pre-load all products in a single query instead of querying per cart item
+        $cartProductIds = [];
+        foreach ($carts as $cartItem) {
+            if (is_array($cartItem) && isset($cartItem['id'])) {
+                $cartProductIds[] = $cartItem['id'];
+            }
+        }
+        $productsMap = Product::whereIn('id', array_unique($cartProductIds))
+            ->with(['digitalVariation', 'clearanceSale' => function ($query) {
+                return $query->active();
+            }])
+            ->withCount('reviews')
+            ->get()
+            ->keyBy('id');
+
+        $allOrderDetailsData = [];
         foreach ($carts as $cartItem) {
             if (is_array($cartItem)) {
-                $product = Product::where(['id' => $cartItem['id']])->with(['digitalVariation', 'clearanceSale' => function ($query) {
-                    return $query->active();
-                }])->withCount('reviews')->first();
+                $product = $productsMap[$cartItem['id']] ?? null;
                 if ($product) {
                     $getOrderDetailsArray = self::getOrderDetailsAddData(cartItem: $cartItem, product: $product);
                     $cartsTotalAmount += $getOrderDetailsArray['price'] * $cartItem['quantity'];
                     $cartsTotalAmount += $getOrderDetailsArray['tax'] * $cartItem['quantity'];
 
-                    $orderDetailsData = [
+                    $allOrderDetailsData[] = [
                         'order_id' => $generateOrderID,
                         'product_id' => $cartItem['id'],
                         'product_details' => $getOrderDetailsArray['product'],
@@ -366,9 +381,12 @@ class POSController extends Controller
                         'updated_at' => now()
                     ];
                     self::getProductStockCalculate(cartItem: $cartItem, product: $product);
-                    DB::table('order_details')->insert($orderDetailsData);
                 }
             }
+        }
+        // PERF-63: Single bulk insert for all order details instead of one insert per cart item
+        if (!empty($allOrderDetailsData)) {
+            DB::table('order_details')->insert($allOrderDetailsData);
         }
 
         $orderData = [

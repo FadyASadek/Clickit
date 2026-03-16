@@ -46,10 +46,18 @@ class DeliveryManController extends Controller
         $wallet = DeliverymanWallet::where('delivery_man_id', $request['delivery_man']['id'])->first();
         $withdrawable_balance = CommonTrait::delivery_man_withdrawable_balance($request['delivery_man']['id']);
         $total_earn = CommonTrait::delivery_man_total_earn($request['delivery_man']['id']);
-        $order = Order::where('delivery_man_id', $request['delivery_man']['id'])->get();
-        $completed_delivery = $order->where('order_status', 'delivered')->count();
-        $pause_delivery = $order->where('is_pause', 1)->count();
-        $pending_delivery = $order->where('order_status', 'pending')->count();
+        
+        $orderCounts = Order::where('delivery_man_id', $request['delivery_man']['id'])
+            ->select('order_status', DB::raw('count(*) as total'))
+            ->groupBy('order_status')
+            ->pluck('total', 'order_status');
+            
+        $completed_delivery = $orderCounts['delivered'] ?? 0;
+        $pending_delivery = $orderCounts['pending'] ?? 0;
+        
+        $pause_delivery = Order::where('delivery_man_id', $request['delivery_man']['id'])->where('is_pause', 1)->count();
+        $total_delivery = $orderCounts->sum();
+        
         $total_deposit = DeliveryManTransaction::where(['delivery_man_id' => $request['delivery_man']['id'], 'transaction_type' => 'cash_in_hand'])->sum('credit');
 
         $request['delivery_man']['withdrawable_balance'] = $withdrawable_balance;
@@ -60,7 +68,7 @@ class DeliveryManController extends Controller
         $request['delivery_man']['total_earn'] = $total_earn;
         $request['delivery_man']['completed_delivery'] = $completed_delivery;
         $request['delivery_man']['pending_delivery'] = $pending_delivery;
-        $request['delivery_man']['total_delivery'] = $order->count();
+        $request['delivery_man']['total_delivery'] = $total_delivery;
         $request['delivery_man']['pause_delivery'] = $pause_delivery;
         $request['delivery_man']['total_deposit'] = $total_deposit;
         $request['delivery_man']['average_rating'] = count($delivery_man->rating) > 0 ? number_format($delivery_man->rating[0]->average, 2, '.', ' ') : 0;

@@ -117,42 +117,7 @@ class ProductController extends Controller
         $publishingHouses = $request->has('publishing_houses') ? json_decode($request['publishing_houses']) : [];
         $productAuthors = $request->has('product_authors') ? json_decode($request['product_authors']) : [];
 
-        $publishingHouseList = PublishingHouse::with(['publishingHouseProducts'])
-            ->whereHas('publishingHouseProducts.product', function ($query) {
-                return $query->active();
-            })
-            ->withCount(['publishingHouseProducts' => function ($query) {
-                return $query->whereHas('product', function ($query) {
-                    return $query->active();
-                });
-            }])->get();
 
-        $productIdsForPublisher = [];
-        $publishingHouseList->each(function ($publishingHouseGroup) use (&$productIdsForPublisher) {
-            $publishingHouseGroup?->publishingHouseProducts?->each(function ($publishingHouse) use (&$productIdsForPublisher) {
-                $productIdsForPublisher[] = $publishingHouse->product_id;
-            });
-        });
-
-        $productIdsForUnknownPublisher = Product::active()->with(['clearanceSale' => function ($query) {
-            return $query->active();
-        }])->where(['product_type' => 'digital'])->whereNotIn('id', $productIdsForPublisher)->pluck('id')->toArray();
-
-        $authorList = Author::withCount(['digitalProductAuthor' => function ($query) {
-            return $query->whereHas('product', function ($query) {
-                return $query->active();
-            });
-        }])->get();
-
-        $productIdsForAuthor = [];
-        $authorList->each(function ($authorGroup) use (&$productIdsForAuthor) {
-            $authorGroup?->digitalProductAuthor?->each(function ($authorItem) use (&$productIdsForAuthor) {
-                $productIdsForAuthor[] = $authorItem->product_id;
-            });
-        });
-        $productIdsForUnknownAuthor = Product::active()->with(['clearanceSale' => function ($query) {
-            return $query->active();
-        }])->where(['product_type' => 'digital'])->whereNotIn('id', $productIdsForAuthor)->pluck('id')->toArray();
 
         $productsIDArray = [];
         if ($request->has('search') && !empty($request['search'])) {
@@ -196,43 +161,51 @@ class ProductController extends Controller
                         return $query->whereIn('sub_sub_category_id', $subSubCategoryIds);
                     });
             })
-            ->when($request->has('publishing_houses') && $publishingHouses, function ($query) use ($request, $publishingHouses, $productIdsForUnknownPublisher) {
-                $publishingHouseList = PublishingHouse::whereIn('id', $publishingHouses)->with(['publishingHouseProducts'])->withCount(['publishingHouseProducts' => function ($query) {
-                    return $query->whereHas('product', function ($query) {
-                        return $query->active();
-                    });
-                }])->get();
+            ->when($request->has('publishing_houses') && $publishingHouses, function ($query) use ($publishingHouses) {
+                $hasUnknown = in_array(0, $publishingHouses);
+                $realHouses = array_filter($publishingHouses, fn($val) => $val != 0);
 
-                $publishingHouseProductIds = [];
-                $publishingHouseList->each(function ($publishingHouseGroup) use (&$publishingHouseProductIds) {
-                    $publishingHouseGroup?->publishingHouseProducts?->each(function ($publishingHouse) use (&$publishingHouseProductIds) {
-                        $publishingHouseProductIds[] = $publishingHouse->product_id;
-                    });
+                return $query->where('product_type', 'digital')->where(function($q) use ($hasUnknown, $realHouses) {
+                    if (!empty($realHouses)) {
+                        $q->whereIn('id', function($subQuery) use ($realHouses) {
+                            $subQuery->select('product_id')->from('digital_product_publishing_houses')->whereIn('publishing_house_id', $realHouses);
+                        });
+                    }
+                    if ($hasUnknown) {
+                        if (!empty($realHouses)) {
+                            $q->orWhereNotIn('id', function($subQuery) {
+                                $subQuery->select('product_id')->from('digital_product_publishing_houses');
+                            });
+                        } else {
+                            $q->whereNotIn('id', function($subQuery) {
+                                $subQuery->select('product_id')->from('digital_product_publishing_houses');
+                            });
+                        }
+                    }
                 });
-
-                if (in_array(0, $publishingHouses)) {
-                    $publishingHouseProductIds = array_merge($publishingHouseProductIds, $productIdsForUnknownPublisher);
-                }
-
-                return $query->where(['product_type' => 'digital'])->whereIn('id', $publishingHouseProductIds);
             })
-            ->when($request->has('product_authors') && $productAuthors, function ($query) use ($request, $productAuthors, $productIdsForUnknownAuthor) {
-                $authorList = Author::whereIn('id', $productAuthors)->withCount(['digitalProductAuthor' => function ($query) {
-                    return $query->whereHas('product', function ($query) {
-                        return $query->active();
-                    });
-                }])->get();
+            ->when($request->has('product_authors') && $productAuthors, function ($query) use ($productAuthors) {
+                $hasUnknown = in_array(0, $productAuthors);
+                $realAuthors = array_filter($productAuthors, fn($val) => $val != 0);
 
-                $authorProductIds = [];
-                $authorList->each(function ($authorGroup) use (&$authorProductIds) {
-                    $authorGroup?->digitalProductAuthor?->each(function ($authorItem) use (&$authorProductIds) {
-                        $authorProductIds[] = $authorItem->product_id;
-                    });
+                return $query->where('product_type', 'digital')->where(function($q) use ($hasUnknown, $realAuthors) {
+                    if (!empty($realAuthors)) {
+                        $q->whereIn('id', function($subQuery) use ($realAuthors) {
+                            $subQuery->select('product_id')->from('digital_product_authors')->whereIn('author_id', $realAuthors);
+                        });
+                    }
+                    if ($hasUnknown) {
+                        if (!empty($realAuthors)) {
+                            $q->orWhereNotIn('id', function($subQuery) {
+                                $subQuery->select('product_id')->from('digital_product_authors');
+                            });
+                        } else {
+                            $q->whereNotIn('id', function($subQuery) {
+                                $subQuery->select('product_id')->from('digital_product_authors');
+                            });
+                        }
+                    }
                 });
-                if (in_array(0, $productAuthors)) {
-                    $authorProductIds = array_merge($authorProductIds, $productIdsForUnknownAuthor);
-                }
-                return $query->where(['product_type' => 'digital'])->whereIn('id', $authorProductIds);
             })
             ->when($request->has('sort_by') && !empty($request->sort_by), function ($query) use ($request) {
                 $query->when($request['sort_by'] == 'low-high', function ($query) {
@@ -700,27 +673,17 @@ class ProductController extends Controller
         $offset = (int)($request['offset'] ?? 1);
 
         if ($user != 'offline') {
-            $orders = $this->order->where(['customer_id' => $user->id])->with(['details'])->get();
+            $orderDetails = OrderDetail::whereHas('order', function ($query) use ($user) {
+                $query->where('customer_id', $user->id);
+            })->latest()->take(100)->get(['product_details']);
 
-            if ($orders) {
-                $orders = $orders?->map(function ($order) {
-                    $order_details = $order->details->map(function ($detail) {
-                        $product = json_decode($detail?->product_details ?? '') ?? null;
-                        $category = $product?->category_ids ? json_decode($product?->category_ids)[0]->id : null;
-                        if ($category) {
-                            $detail['category_id'] = $category;
-                        }
-                        return $detail;
-                    });
-                    $order['id'] = $order_details[0]->id;
-                    $order['category_id'] = $order_details[0]?->category_id ?? null;
-                    return $order;
-                });
-
+            if ($orderDetails->isNotEmpty()) {
                 $categories = [];
-                foreach ($orders as $order) {
-                    if ($order['category_id']) {
-                        $categories[] = $order['category_id'];
+                foreach ($orderDetails as $detail) {
+                    $product = json_decode($detail->product_details ?? '') ?? null;
+                    $category = $product?->category_ids ? json_decode($product->category_ids)[0]->id : null;
+                    if ($category) {
+                        $categories[] = $category;
                     }
                 }
                 $ids = array_unique($categories);

@@ -110,19 +110,26 @@ class ChatController extends Controller
             ->whereIn($id_param, $users)
             ->select($id_param)
             ->distinct()
-            ->get()
+            ->pluck($id_param)
             ->toArray();
-        $unique_chat_ids = call_user_func_array('array_merge', $unique_chat_ids);
 
-        $chats = array();
+        // PERF-66: Bulk fetch latest messages instead of querying per chat ID
+        $chats = [];
         if ($unique_chat_ids) {
-            foreach ($unique_chat_ids as $unique_chat_id) {
-                $chats[] = Chatting::with([$with_param])
-                    ->where(['seller_id' => $seller['id'], $id_param => $unique_chat_id])
-                    ->whereNotNull($id_param)
-                    ->latest()
-                    ->first();
-            }
+            $latestChatIds = Chatting::where(['seller_id' => $seller['id']])
+                ->whereIn($id_param, $unique_chat_ids)
+                ->whereNotNull($id_param)
+                ->selectRaw("MAX(id) as max_id")
+                ->groupBy($id_param)
+                ->pluck('max_id')
+                ->toArray();
+
+            $chats = Chatting::with([$with_param])
+                ->whereIn('id', $latestChatIds)
+                ->latest()
+                ->get()
+                ->values()
+                ->toArray();
         }
 
         return response()->json($chats, 200);

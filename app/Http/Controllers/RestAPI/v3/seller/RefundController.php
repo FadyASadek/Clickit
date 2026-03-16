@@ -35,7 +35,7 @@ class RefundController extends Controller
                 foreach ($key as $value) {
                     $query->where('order_id', 'like', "%{$value}%");
                 }
-            })->latest()->get();
+            })->latest()->take(100)->get(); // PERF-67: Cap results to prevent memory exhaustion
         return response()->json($refund_list);
     }
 
