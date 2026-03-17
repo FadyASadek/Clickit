@@ -126,15 +126,14 @@ class CustomerRepository implements CustomerRepositoryInterface
             });
 
         if (!empty($takeItem) && $dataLimit == 'all') {
-            return $query->get()->slice(0, $takeItem)->values();
+            return $query->limit($takeItem)->get();
         } else if (!empty($takeItem) && $dataLimit != 'all') {
-            $allResults = $query->get();
-            $allResults = $allResults->slice(0, $takeItem);
+            $results = $query->limit($takeItem)->get();
             $page = request('page') ?? 1;
             $perPage = $dataLimit;
             $paginator = new LengthAwarePaginator(
-                items: $allResults->forPage($page, $perPage)->values(),
-                total: $allResults->count(),
+                items: $results->forPage($page, $perPage)->values(),
+                total: $results->count(),
                 perPage: $perPage,
                 currentPage: $page,
                 options: ['path' => request()->url(), 'query' => request()->query()]);
@@ -145,7 +144,8 @@ class CustomerRepository implements CustomerRepositoryInterface
 
     public function getListWhereNotIn(array $ids = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator
     {
-        return $this->user->whereNotIn('id', $ids)->get();
+        $query = $this->user->with($relations)->whereNotIn('id', $ids);
+        return $dataLimit == 'all' ? $query->get() : $query->paginate($dataLimit);
     }
 
     public function update(string $id, array $data): bool

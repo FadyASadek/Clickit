@@ -42,7 +42,7 @@ class CustomRoleController extends BaseController
             orderBy: ['id' => 'desc'],
             searchValue: $request['searchValue'],
             filters: ['admin_role_id' => $request['role']],
-            dataLimit: 'all'
+            dataLimit: getWebConfig('pagination_limit')
         );
         return view('admin-views.custom-role.create', compact('roles', 'employeeRolePermission'));
     }

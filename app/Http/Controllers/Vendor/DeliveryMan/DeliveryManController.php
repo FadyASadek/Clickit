@@ -13,6 +13,7 @@ use App\Exports\DeliveryManListExport;
 use App\Http\Controllers\BaseController;
 use App\Http\Requests\Vendor\DeliveryManRequest;
 use App\Http\Requests\Vendor\DeliveryManUpdateRequest;
+use App\Models\Review;
 use App\Services\DeliveryManService;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
 use Illuminate\Contracts\View\View;
@@ -187,19 +188,40 @@ class DeliveryManController extends BaseController
             'rating' => $request['rating'],
         ];
 
-        $reviews = $this->reviewRepo->getListWhere(
-            searchValue:$searchValue,
-            filters: $filters,
-            relations: ['order'],
-            dataLimit: getWebConfig(name: 'pagination_limit'));
+        // Ensure we only query ratings that match our filters
+        $reviewBaseQuery = Review::where('delivery_man_id', $id)
+            ->when($searchValue, function ($query) use ($searchValue) {
+                $query->whereHas('order', function ($q) use ($searchValue) {
+                    $q->where('id', 'like', "%{$searchValue}%");
+                });
+            })
+            ->when($request['from_date'] && $request['to_date'], function ($query) use ($request) {
+                $query->whereBetween('created_at', [$request['from_date'] . ' 00:00:00', $request['to_date'] . ' 23:59:59']);
+            })
+            ->when($request['rating'], function ($query) use ($request) {
+                $query->where('rating', $request['rating']);
+            });
 
-        $total = $reviews->total();
-        $averageRatting = $reviews->avg('rating');
-        $one = $reviews->where('rating', 1)->count();
-        $two = $reviews->where('rating', 2)->count();
-        $three = $reviews->where('rating', 3)->count();
-        $four = $reviews->where('rating', 4)->count();
-        $five = $reviews->where('rating', 5)->count();
+        // Paginate using DB level
+        $reviews = (clone $reviewBaseQuery)
+            ->with(['order'])
+            ->orderBy('updated_at', 'desc')
+            ->paginate(getWebConfig(name: 'pagination_limit'));
+
+        $total = (clone $reviewBaseQuery)->count();
+        $averageRatting = (clone $reviewBaseQuery)->avg('rating');
+
+        $ratingCounts = (clone $reviewBaseQuery)
+            ->select('rating', \Illuminate\Support\Facades\DB::raw('count(*) as count'))
+            ->groupBy('rating')
+            ->pluck('count', 'rating');
+
+        $one = $ratingCounts->get(1, 0);
+        $two = $ratingCounts->get(2, 0);
+        $three = $ratingCounts->get(3, 0);
+        $four = $ratingCounts->get(4, 0);
+        $five = $ratingCounts->get(5, 0);
+
         return view(DeliveryMan::RATING[VIEW],compact(
             'deliveryMan',
             'searchValue',

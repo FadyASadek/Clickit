@@ -5,6 +5,7 @@ namespace App\Contracts\Repositories;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\LazyCollection;
 
 /**
  *
@@ -42,9 +43,9 @@ interface ProductRepositoryInterface extends RepositoryInterface
      * @param array $relations
      * @param int|string $dataLimit
      * @param int|null $offset
-     * @return Collection|LengthAwarePaginator
+     * @return Collection|LengthAwarePaginator|LazyCollection
      */
-    public function getStockLimitListWhere(array $orderBy = [], ?string $searchValue = null, array $filters = [], array $withCount = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, ?int $offset = null): Collection|LengthAwarePaginator;
+    public function getStockLimitListWhere(array $orderBy = [], ?string $searchValue = null, array $filters = [], array $withCount = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, ?int $offset = null): Collection|LengthAwarePaginator|LazyCollection;
 
     /**
      * @param array $data
@@ -59,9 +60,9 @@ interface ProductRepositoryInterface extends RepositoryInterface
      * @param array $relations
      * @param int|string $dataLimit
      * @param int|null $offset
-     * @return Collection|LengthAwarePaginator
+     * @return Collection|LengthAwarePaginator|LazyCollection
      */
-    public function getListWhereNotIn(array $filters = [], array $whereNotIn = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator;
+    public function getListWhereNotIn(array $filters = [], array $whereNotIn = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection;
 
     /**
      * @param array $orderBy
@@ -74,9 +75,9 @@ interface ProductRepositoryInterface extends RepositoryInterface
      * @param array $withCount
      * @param int|string $dataLimit
      * @param int|null $offset
-     * @return Collection|LengthAwarePaginator
+     * @return Collection|LengthAwarePaginator|LazyCollection
      */
-    public function getListWithScope(array $orderBy = [], string $searchValue = null, string $scope = null, array $filters = [], array $whereIn = [], array $whereNotIn = [], array $relations = [], array $withCount = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator;
+    public function getListWithScope(array $orderBy = [], string $searchValue = null, string $scope = null, array $filters = [], array $whereIn = [], array $whereNotIn = [], array $relations = [], array $withCount = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection;
 
     /**
      * @param array $orderBy
@@ -91,27 +92,27 @@ interface ProductRepositoryInterface extends RepositoryInterface
      * @param array $withSum
      * @param int|string $dataLimit
      * @param int|null $offset
-     * @return Collection|LengthAwarePaginator
+     * @return Collection|LengthAwarePaginator|LazyCollection
      */
-    public function getWebListWithScope(array $orderBy = [], string $searchValue = null, string $scope = null, array $filters = [], array $whereHas = [], array $whereIn = [], array $whereNotIn = [], array $relations = [], array $withCount = [], array $withSum = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator;
+    public function getWebListWithScope(array $orderBy = [], string $searchValue = null, string $scope = null, array $filters = [], array $whereHas = [], array $whereIn = [], array $whereNotIn = [], array $relations = [], array $withCount = [], array $withSum = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection;
 
     /**
      * @param array $filters
      * @param array $relations
      * @param int|string $dataLimit
      * @param int|null $offset
-     * @return Collection|LengthAwarePaginator
+     * @return Collection|LengthAwarePaginator|LazyCollection
      */
-    public function getTopRatedList(array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator;
+    public function getTopRatedList(array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection;
 
     /**
      * @param array $filters
      * @param array $relations
      * @param int|string $dataLimit
      * @param int|null $offset
-     * @return Collection|LengthAwarePaginator
+     * @return Collection|LengthAwarePaginator|LazyCollection
      */
-    public function getTopSellList(array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator;
+    public function getTopSellList(array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection;
 
     /**
      * @param array $params

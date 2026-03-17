@@ -162,7 +162,7 @@ class OrderController extends BaseController
             'seller_is' => 'seller',
         ];
 
-        $orders = $this->orderRepo->getListWhere(orderBy: ['id' => 'desc'], searchValue: $request['searchValue'], filters: $filters, relations: ['customer','seller.shop'], dataLimit: 'all');
+        $orders = $this->orderRepo->getListWhere(orderBy: ['id' => 'desc'], searchValue: $request['searchValue'], filters: $filters, relations: ['customer','seller.shop', 'details'], dataLimit: 'all');
 
         /** order status count  */
         $status_array = [
@@ -288,7 +288,7 @@ class OrderController extends BaseController
             'id' => [$order['id']],
         ];
         $linkedOrders = $this->orderRepo->getListWhereNotIn(filters: ['order_group_id' => $order['order_group_id']], whereNotIn: $whereNotIn, dataLimit: 'all');
-        $totalDelivered = $this->orderRepo->getListWhere(filters: ['seller_id' => $order['seller_id'], 'order_status' => 'delivered', 'order_type' => 'default_type'], dataLimit: 'all')->count();
+        $totalDelivered = \App\Models\Order::where(['seller_id' => $order['seller_id'], 'order_status' => 'delivered', 'order_type' => 'default_type'])->count();
         $shippingMethod = getWebConfig(name: 'shipping_method');
 
         $sellerId = 0;
