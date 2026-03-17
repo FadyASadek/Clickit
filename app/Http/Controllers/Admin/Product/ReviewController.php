@@ -65,11 +65,23 @@ class ReviewController extends BaseController
         ];
 
         if ($request->has('searchValue')) {
-            $productIds = $this->productRepo->getListWhere(
-                searchValue: $request['searchValue'],
-                dataLimit: 'all'
-            )->pluck('id')->toArray();
-            $customerIds = $this->customerRepo->getListWhere(searchValue: $request['searchValue'], dataLimit: 'all')->pluck('id')->toArray();
+            $searchValue = $request['searchValue'];
+
+            // PERF-24: Direct DB pluck to prevent memory exhaustion
+            $translationProductIds = \App\Models\Translation::where('translationable_type', 'App\Models\Product')
+                ->where('key', 'name')
+                ->where('value', 'like', "%{$searchValue}%")
+                ->pluck('translationable_id')->toArray();
+
+            $baseProductIds = \App\Models\Product::where('name', 'like', "%{$searchValue}%")->pluck('id')->toArray();
+            $productIds = array_unique(array_merge($translationProductIds, $baseProductIds));
+
+            $customerIds = \App\Models\User::where('f_name', 'like', "%{$searchValue}%")
+                ->orWhere('l_name', 'like', "%{$searchValue}%")
+                ->orWhere('phone', 'like', "%{$searchValue}%")
+                ->orWhere('email', 'like', "%{$searchValue}%")
+                ->pluck('id')->toArray();
+
             $filtersBy = [
                 'product_id' => $productIds,
                 'customer_id' => $customerIds,
@@ -145,10 +157,23 @@ class ReviewController extends BaseController
             'delivery_man_id' => null,
         ];
         if ($request->has('searchValue')) {
-            $productIds = $this->productRepo->getListWhere(
-                searchValue: $request['searchValue'],
-                dataLimit: 'all')->pluck('id')->toArray();
-            $customerIds = $this->customerRepo->getListWhere(searchValue: $request['searchValue'], dataLimit: 'all')->pluck('id')->toArray();
+            $searchValue = $request['searchValue'];
+
+            // PERF-24: Direct DB pluck to prevent memory exhaustion
+            $translationProductIds = \App\Models\Translation::where('translationable_type', 'App\Models\Product')
+                ->where('key', 'name')
+                ->where('value', 'like', "%{$searchValue}%")
+                ->pluck('translationable_id')->toArray();
+
+            $baseProductIds = \App\Models\Product::where('name', 'like', "%{$searchValue}%")->pluck('id')->toArray();
+            $productIds = array_unique(array_merge($translationProductIds, $baseProductIds));
+
+            $customerIds = \App\Models\User::where('f_name', 'like', "%{$searchValue}%")
+                ->orWhere('l_name', 'like', "%{$searchValue}%")
+                ->orWhere('phone', 'like', "%{$searchValue}%")
+                ->orWhere('email', 'like', "%{$searchValue}%")
+                ->pluck('id')->toArray();
+
             $filtersBy = [
                 'product_id' => $productIds,
                 'customer_id' => $customerIds,

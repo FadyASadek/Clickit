@@ -15,6 +15,7 @@ use App\Traits\ProductTrait;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -134,7 +135,7 @@ class ProductRepository implements ProductRepositoryInterface
         
     }
 
-    public function getListWhere(array $orderBy = [], string $searchValue = null, array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator
+    public function getListWhere(array $orderBy = [], string $searchValue = null, array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection
     {
         $query = $this->product->with($relations)->when(isset($filters['added_by']) && $this->isAddedByInHouse(addedBy: $filters['added_by']), function ($query) {
             return $query->where(['added_by' => 'admin']);
@@ -202,10 +203,10 @@ class ProductRepository implements ProductRepositoryInterface
         });
 
         $filters += ['searchValue' => $searchValue];
-        return $dataLimit == 'all' ? $query->get() : $query->paginate($dataLimit)->appends($filters);
+        return $dataLimit == 'all' ? $query->get() : ($dataLimit == 'cursor' ? $query->cursor() : $query->paginate($dataLimit)->appends($filters));
     }
 
-    public function getListWithScope(array $orderBy = [], string $searchValue = null, string $scope = null, array $filters = [], array $whereIn = [], array $whereNotIn = [], array $relations = [], array $withCount = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator
+    public function getListWithScope(array $orderBy = [], string $searchValue = null, string $scope = null, array $filters = [], array $whereIn = [], array $whereNotIn = [], array $relations = [], array $withCount = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection
     {
         $query = $this->product->with($relations)
             ->when(isset($withCount['reviews']), function ($query) use ($withCount) {
@@ -269,10 +270,10 @@ class ProductRepository implements ProductRepositoryInterface
             });
 
         $filters += ['searchValue' => $searchValue];
-        return $dataLimit == 'all' ? $query->get() : $query->paginate($dataLimit)->appends($filters);
+        return $dataLimit == 'all' ? $query->get() : ($dataLimit == 'cursor' ? $query->cursor() : $query->paginate($dataLimit)->appends($filters));
     }
 
-    public function getWebListWithScope(array $orderBy = [], string $searchValue = null, string $scope = null, array $filters = [], array $whereHas = [], array $whereIn = [], array $whereNotIn = [], array $relations = [], array $withCount = [], array $withSum = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator
+    public function getWebListWithScope(array $orderBy = [], string $searchValue = null, string $scope = null, array $filters = [], array $whereHas = [], array $whereIn = [], array $whereNotIn = [], array $relations = [], array $withCount = [], array $withSum = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection
     {
         $query = $this->product
             ->when(isset($scope) && $scope == 'active', function ($query) {
@@ -356,7 +357,7 @@ class ProductRepository implements ProductRepositoryInterface
             });
 
         $filters += ['searchValue' => $searchValue];
-        return $dataLimit == 'all' ? $query->get() : $query->paginate($dataLimit)->appends($filters);
+        return $dataLimit == 'all' ? $query->get() : ($dataLimit == 'cursor' ? $query->cursor() : $query->paginate($dataLimit)->appends($filters));
     }
 
     public function update(string $id, array $data): bool
@@ -371,7 +372,7 @@ class ProductRepository implements ProductRepositoryInterface
         return $this->product->where($params)->update($data);
     }
 
-    public function getListWhereNotIn(array $filters = [], array $whereNotIn = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator
+    public function getListWhereNotIn(array $filters = [], array $whereNotIn = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection
     {
         $query = $this->product->when($whereNotIn, function ($query) use ($whereNotIn) {
             foreach ($whereNotIn as $key => $whereNotInIndex) {
@@ -384,10 +385,10 @@ class ProductRepository implements ProductRepositoryInterface
         });
 
         // PERF-10: Respect dataLimit parameter instead of hardcoding ->get()
-        return $dataLimit == 'all' ? $query->get() : $query->paginate($dataLimit);
+        return $dataLimit == 'all' ? $query->get() : ($dataLimit == 'cursor' ? $query->cursor() : $query->paginate($dataLimit));
     }
 
-    public function getTopRatedList(array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator
+    public function getTopRatedList(array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection
     {
         $query = $this->product->with($relations)->where($filters)
             ->with('reviews', function ($query) {
@@ -403,12 +404,14 @@ class ProductRepository implements ProductRepositoryInterface
 
         if ($dataLimit === 'all') {
             return $query->get();
+        } else if ($dataLimit === 'cursor') {
+            return $query->cursor();
         }
 
         return $query->paginate($dataLimit, ['*'], 'page', $offset)->appends(request()->query());
     }
 
-    public function getTopSellList(array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator
+    public function getTopSellList(array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection
     {
         $query = $this->product->with($relations)
             ->when(isset($filters['added_by']) && $this->isAddedByInHouse(addedBy: $filters['added_by']), function ($query) {
@@ -429,6 +432,8 @@ class ProductRepository implements ProductRepositoryInterface
 
         if ($dataLimit === 'all') {
             return $query->get();
+        } else if ($dataLimit === 'cursor') {
+            return $query->cursor();
         }
 
         return $query->paginate($dataLimit, ['*'], 'page', $offset)->appends(request()->query());
@@ -440,7 +445,7 @@ class ProductRepository implements ProductRepositoryInterface
         return $this->product->where($params)->delete();
     }
 
-    public function getStockLimitListWhere(array $orderBy = [], ?string $searchValue = null, array $filters = [], array $withCount = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, ?int $offset = null): Collection|LengthAwarePaginator
+    public function getStockLimitListWhere(array $orderBy = [], ?string $searchValue = null, array $filters = [], array $withCount = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, ?int $offset = null): Collection|LengthAwarePaginator|LazyCollection
     {
         $stockLimit = $filters['current_stock'];
         $query = $this->product->with($relations)
@@ -482,7 +487,7 @@ class ProductRepository implements ProductRepositoryInterface
             });
 
         $filters += ['searchValue' => $searchValue];
-        return $dataLimit == 'all' ? $query->get() : $query->paginate($dataLimit)->appends($filters);
+        return $dataLimit == 'all' ? $query->get() : ($dataLimit == 'cursor' ? $query->cursor() : $query->paginate($dataLimit)->appends($filters));
     }
 
     public function getProductIds(array $filters = []): \Illuminate\Support\Collection|array

@@ -1438,11 +1438,12 @@ class ProductController extends Controller
         ];
 
         $stockLimit = ($seller['stock_limit'] ?? 0) <= 0 ? getWebConfig(name: 'stock_limit') : $seller['stock_limit'];
-        $products = Product::where($filters)->where('current_stock', '<', $stockLimit)->get();
-        if ($products->count() == 1) {
-            return response()->json(['status' => 'one_product', 'product_count' => 1, 'product' => $products->first()], 200);
+        $productsQuery = Product::where($filters)->where('current_stock', '<', $stockLimit);
+        $count = $productsQuery->count();
+        if ($count == 1) {
+            return response()->json(['status' => 'one_product', 'product_count' => 1, 'product' => $productsQuery->first()], 200);
         } else {
-            return response()->json(['status' => 'multiple_product', 'product_count' => $products->count()], 200);
+            return response()->json(['status' => 'multiple_product', 'product_count' => $count], 200);
         }
     }
 

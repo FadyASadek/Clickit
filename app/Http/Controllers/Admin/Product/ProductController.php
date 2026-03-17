@@ -525,7 +525,9 @@ class ProductController extends BaseController
             'sub_sub_category_id' => $request['sub_sub_category_id'],
         ];
 
-        $products = $this->productRepo->getListWhere(orderBy: ['id' => 'desc'], searchValue: $request['searchValue'], filters: $filters, dataLimit: 'all');
+        // Fetch query clone for total count to avoid exhausting the cursor
+        $totalCount = $this->productRepo->getListWhere(orderBy: ['id' => 'desc'], searchValue: $request['searchValue'], filters: $filters, dataLimit: 'all')->count();
+        $products = $this->productRepo->getListWhere(orderBy: ['id' => 'desc'], searchValue: $request['searchValue'], filters: $filters, dataLimit: 'cursor');
 
         $category = (!empty($request['category_id']) && $request->has('category_id')) ? $this->categoryRepo->getFirstWhere(params: ['id' => $request['category_id']]) : 'all';
         $subCategory = (!empty($request->sub_category_id) && $request->has('sub_category_id')) ? $this->categoryRepo->getFirstWhere(params: ['id' => $request['sub_category_id']]) : 'all';
@@ -833,13 +835,13 @@ class ProductController extends BaseController
             'request_status' => $request['status'],
             'current_stock' => getWebConfig(name: 'stock_limit'),
         ];
-        $products = $this->productRepo->getStockLimitListWhere(filters: $filters, dataLimit: 'all');
-        if ($products->count() == 1) {
-            $product = $products->first();
+        $paginator = $this->productRepo->getStockLimitListWhere(filters: $filters, dataLimit: 2);
+        if ($paginator->total() == 1) {
+            $product = $paginator->first();
             $thumbnail = getStorageImages(path: $product->thumbnail_full_url, type: 'backend-product');
             return response()->json(['status' => 'one_product', 'product_count' => 1, 'product' => $product, 'thumbnail' => $thumbnail]);
         } else {
-            return response()->json(['status' => 'multiple_product', 'product_count' => $products->count()]);
+            return response()->json(['status' => 'multiple_product', 'product_count' => $paginator->total()]);
         }
 
     }
@@ -945,14 +947,26 @@ class ProductController extends BaseController
             relations: ['product'],
             whereBetween: 'created_at',
             whereBetweenFilters: $startDate && $endDate ? [$startDate, $endDate] : [],
-            dataLimit: 'all',
+            dataLimit: 'cursor',
         );
+
+        // Fetch total count without relying on the lazy collection's `.count()` generator
+        $totalCount = $this->restockProductRepo->getListWhereBetween(
+            orderBy: ['updated_at' => 'desc'],
+            searchValue: $request['searchValue'],
+            filters: $filters,
+            whereBetween: 'created_at',
+            whereBetweenFilters: $startDate && $endDate ? [$startDate, $endDate] : [],
+            dataLimit: 'all',
+        )->count();
+
         $brand = (!empty($request->brand_id) && $request->has('brand_id')) ? $this->brandRepo->getFirstWhere(params: ['id' => $request->brand_id]) : 'all';
         $category = (!empty($request['category_id']) && $request->has('category_id')) ? $this->categoryRepo->getFirstWhere(params: ['id' => $request['category_id']]) : 'all';
         $subCategory = (!empty($request->sub_category_id) && $request->has('sub_category_id')) ? $this->categoryRepo->getFirstWhere(params: ['id' => $request['sub_category_id']]) : 'all';
 
         $data = [
             'products' => $restockProducts,
+            'totalCount' => $totalCount,
             'category' => $category,
             'subCategory' => $subCategory,
             'brand' => $brand,

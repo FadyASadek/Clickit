@@ -5,6 +5,7 @@ namespace App\Contracts\Repositories;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\LazyCollection;
 
 interface RepositoryInterface
 {
@@ -26,9 +27,9 @@ interface RepositoryInterface
      * @param array $relations
      * @param int|string $dataLimit If you need all data without pagination, you need to set dataLimit = 'all'
      * @param int|null $offset
-     * @return Collection|LengthAwarePaginator
+     * @return Collection|LengthAwarePaginator|LazyCollection
      */
-    public function getList(array $orderBy=[], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator;
+    public function getList(array $orderBy=[], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection;
 
 
     /**
@@ -38,9 +39,9 @@ interface RepositoryInterface
      * @param array $relations
      * @param int|string $dataLimit If you need all data without pagination, you need to set dataLimit = 'all'
      * @param int|null $offset
-     * @return Collection|LengthAwarePaginator
+     * @return Collection|LengthAwarePaginator|LazyCollection
      */
-    public function getListWhere(array $orderBy=[], string $searchValue = null, array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator;
+    public function getListWhere(array $orderBy=[], string $searchValue = null, array $filters = [], array $relations = [], int|string $dataLimit = DEFAULT_DATA_LIMIT, int $offset = null): Collection|LengthAwarePaginator|LazyCollection;
 
 
     /**

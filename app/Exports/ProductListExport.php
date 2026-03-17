@@ -49,11 +49,12 @@ class ProductListExport implements FromView, ShouldAutoSize, WithStyles,WithColu
     }
 
     public function styles(Worksheet $sheet) {
+        $rowCount = $this->data['totalCount'] ?? $this->data['products']->count();
         $sheet->getStyle('A1:A3')->getFont()->setBold(true);
-        $sheet->getStyle('A3:S3')->getFont()->setBold(true)->getColor()
-        ->setARGB('FFFFFF');
+        $sheet->getStyle('A4:S4')->getFont()->setBold(true)->getColor()
+            ->setARGB('FFFFFF');
 
-        $sheet->getStyle('A3:S3')->getFill()->applyFromArray([
+        $sheet->getStyle('A4:S4')->getFill()->applyFromArray([
             'fillType' => 'solid',
             'rotation' => 0,
             'color' => ['rgb' => '063C93'],
@@ -62,7 +63,7 @@ class ProductListExport implements FromView, ShouldAutoSize, WithStyles,WithColu
         $sheet->setShowGridlines(false);
         return [
             // Define the style for cells with data
-            'A1:S'.$this->data['products']->count() + 3 => [
+            'A1:S' . $rowCount + 3 => [
                 'borders' => [
                     'allBorders' => [
                         'borderStyle' => Border::BORDER_THIN,
@@ -108,11 +109,12 @@ class ProductListExport implements FromView, ShouldAutoSize, WithStyles,WithColu
     {
         return [
             AfterSheet::class => function(AfterSheet $event) {
+                $rowCount = $this->data['totalCount'] ?? $this->data['products']->count();
                 $event->sheet->getStyle('A1:S1') // Adjust the range as per your needs
                     ->getAlignment()
                     ->setHorizontal(Alignment::HORIZONTAL_CENTER)
                     ->setVertical(Alignment::VERTICAL_CENTER);
-                $event->sheet->getStyle('A3:S'.$this->data['products']->count() + 3) // Adjust the range as per your needs
+                $event->sheet->getStyle('A4:S' . $rowCount + 3) // Adjust the range as per your needs
                     ->getAlignment()
                     ->setHorizontal(Alignment::HORIZONTAL_CENTER)
                     ->setVertical(Alignment::VERTICAL_CENTER);

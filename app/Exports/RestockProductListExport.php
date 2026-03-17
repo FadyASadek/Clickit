@@ -49,6 +49,7 @@ class RestockProductListExport implements FromView, ShouldAutoSize, WithStyles, 
 
     public function styles(Worksheet $sheet)
     {
+        $rowCount = $this->data['totalCount'] ?? $this->data['products']->count();
         $sheet->getStyle('A1:A3')->getFont()->setBold(true);
         $sheet->getStyle('A4:H4')->getFont()->setBold(true)->getColor()
             ->setARGB('FFFFFF');
@@ -61,7 +62,7 @@ class RestockProductListExport implements FromView, ShouldAutoSize, WithStyles, 
 
         $sheet->setShowGridlines(false);
         return [
-            'A1:H' . $this->data['products']->count() + 4 => [
+            'A1:H' . $rowCount + 4 => [
                 'borders' => [
                     'allBorders' => [
                         'borderStyle' => Border::BORDER_THIN,
@@ -109,11 +110,12 @@ class RestockProductListExport implements FromView, ShouldAutoSize, WithStyles, 
     {
         return [
             AfterSheet::class => function (AfterSheet $event) {
+                $rowCount = $this->data['totalCount'] ?? $this->data['products']->count();
                 $event->sheet->getStyle('A1:H1')
                 ->getAlignment()
                     ->setHorizontal(Alignment::HORIZONTAL_CENTER)
                     ->setVertical(Alignment::VERTICAL_CENTER);
-                $event->sheet->getStyle('A4:H' . $this->data['products']->count() + 4)
+                $event->sheet->getStyle('A4:H' . $rowCount + 4)
                 ->getAlignment()
                     ->setHorizontal(Alignment::HORIZONTAL_CENTER)
                     ->setVertical(Alignment::VERTICAL_CENTER);

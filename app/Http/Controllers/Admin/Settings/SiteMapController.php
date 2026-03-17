@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Modules\Blog\app\Models\Blog;
+use App\Models\Product;
+use App\Models\Shop;
 use Spatie\Sitemap\SitemapGenerator;
 use Spatie\Sitemap\Tags\Url;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -120,7 +122,7 @@ class SiteMapController extends BaseController
                 && strpos($url, '/shop-view') === false;
         });
 
-        $productsUrl = $this->productRepo->getWebListWithScope(scope: 'active', dataLimit: 'all')->pluck('slug');
+        $productsUrl = Product::active()->pluck('slug');
         foreach ($productsUrl as $productSingleUrl) {
             $urlObject = Url::create(route('product', ['slug' => $productSingleUrl]))
                 ->setLastModificationDate($currentTime)
@@ -129,7 +131,7 @@ class SiteMapController extends BaseController
             $generator->getSitemap()->add($urlObject);
         }
 
-        $blogsUrl = Blog::active()->get();
+        $blogsUrl = Blog::active()->pluck('slug');
         foreach ($blogsUrl as $blogSingleUrl) {
             $urlObject = Url::create(route('frontend.blog.details', ['slug' => $blogSingleUrl]))
                 ->setLastModificationDate($currentTime)
@@ -150,7 +152,7 @@ class SiteMapController extends BaseController
             ->setPriority(0.8);
         $generator->getSitemap()->add($urlObject);
 
-        $shopsUrl = $this->shopRepo->getListWithScope(scope: 'active', dataLimit: 'all')->pluck('id');
+        $shopsUrl = Shop::active()->pluck('id');
         foreach ($shopsUrl as $shopSingleUrl) {
             $urlObject = Url::create(route('shopView', ['id' => $shopSingleUrl]))
                 ->setLastModificationDate($currentTime)
