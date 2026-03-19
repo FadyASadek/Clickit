@@ -107,6 +107,14 @@ class ProductListController extends Controller
 
         $productListData = ProductManager::getProductListData(request: $request);
         $ratings = self::getProductsRatingOneToFiveAsArray(productQuery: $productListData);
+        
+        if ($request->has('ratings') && $request['ratings'] != null) {
+            $productListData = $productListData->whereHas('rating', function ($query) use ($request) {
+                return $query->where('average', '>=', $request['ratings'])
+                    ->where('average', '<', $request['ratings'] + 1);
+            });
+        }
+        
         $products = $productListData->paginate(20)->appends($data);
         $getProductIds = $products->pluck('id')->toArray();
 
@@ -202,6 +210,8 @@ class ProductListController extends Controller
         $tagProductAuthors = $this->getPageSelectedDataByType(request: $request, type: 'author');
         $tagBrand = $this->getPageSelectedDataByType(request: $request, type: 'brand');
 
+        $productListData = ProductManager::getProductListData(request: $request);
+
         if ($request['ratings'] != null) {
             $productListData = $productListData->whereHas('rating', function ($query) use ($request) {
                 return $query->where('average', '>=', $request['ratings'])
@@ -276,7 +286,9 @@ class ProductListController extends Controller
         $rating_4 = 0;
         $rating_5 = 0;
 
-        foreach ($productQuery as $rating) {
+        $products = (clone $productQuery)->with('rating')->select('id')->get();
+
+        foreach ($products as $rating) {
             if (isset($rating->rating[0]['average']) && ($rating->rating[0]['average'] > 0 && $rating->rating[0]['average'] < 2)) {
                 $rating_1 += 1;
             } elseif (isset($rating->rating[0]['average']) && ($rating->rating[0]['average'] >= 2 && $rating->rating[0]['average'] < 3)) {
@@ -353,25 +365,23 @@ class ProductListController extends Controller
 
         $productListData = ProductManager::getProductListData(request: $request, type: 'flash-deals');
         $ratings = self::getProductsRatingOneToFiveAsArray(productQuery: $productListData);
+
+        if ($request->has('ratings') && $request['ratings'] != null) {
+            $productListData = $productListData->whereHas('rating', function ($query) use ($request) {
+                return $query->where('average', '>=', $request['ratings'])
+                    ->where('average', '<', $request['ratings'] + 1);
+            });
+        }
+        
         $products = $productListData->paginate(20)->appends($data);
         $getProductIds = $products->pluck('id')->toArray();
-
-        if ($request['ratings'] != null) {
-            $products = $products->map(function ($product) use ($request) {
-                $product->rating = $product->rating->pluck('average')[0];
-                return $product;
-            });
-            $products = $products->where('rating', '>=', $request['ratings'])
-                ->where('rating', '<', $request['ratings'] + 1)
-                ->paginate(20)->appends($data);
-        }
 
         $allProductsColorList = ProductManager::getProductsColorsArray();
         $tagCategory = $this->getPageSelectedDataByType(request: $request, type: 'tag');
         $tagPublishingHouse = $this->getPageSelectedDataByType(request: $request, type: 'publishing_house');
         $tagProductAuthors = $this->getPageSelectedDataByType(request: $request, type: 'author');
         $tagBrand = $this->getPageSelectedDataByType(request: $request, type: 'brand');
-        $paginateCount = ceil($products->count() / $singlePageProductCount);
+        $paginateCount = ceil($products->total() / $singlePageProductCount);
 
         if ($request->ajax()) {
             return response()->json([
@@ -443,10 +453,18 @@ class ProductListController extends Controller
         }
 
         $rating = $request->rating ?? [];
+
+        if ($request->has('ratings') && $request['ratings'] != null) {
+            $productListData = $productListData->whereHas('rating', function ($query) use ($request) {
+                return $query->where('average', '>=', $request['ratings'])
+                    ->where('average', '<', $request['ratings'] + 1);
+            });
+        }
+
         $productsCount = $productListData->count();
         $paginateCount = ceil($productsCount / $singlePageProductCount);
         $currentPage = $offset ?? Paginator::resolveCurrentPage('page');
-        $results = $productListData->forPage($currentPage, $singlePageProductCount);
+        $results = $productListData->forPage($currentPage, $singlePageProductCount)->get();
         $products = new LengthAwarePaginator(items: $results, total: $productsCount, perPage: $singlePageProductCount, currentPage: $currentPage, options: [
             'path' => Paginator::resolveCurrentPath(),
             'appends' => $request->all(),
