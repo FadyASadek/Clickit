@@ -222,7 +222,7 @@ class CustomerController extends Controller
             return $query->with(['clearanceSale' => function ($query) {
                 return $query->active();
             }]);
-        }])->where('customer_id', $request->user()->id)->get();
+        }])->where('customer_id', $request->user()->id)->take(100)->get();
 
         $wishlist->map(function ($data) {
             $data['productFullInfo'] = Helpers::product_data_formatting(json_decode($data['productFullInfo'], true));
@@ -431,9 +431,9 @@ class CustomerController extends Controller
 
         $detailsList->map(function ($query) use ($user, $allReviews) {
             $query['variation'] = json_decode($query['variation'], true);
-            $currentProduct = Product::where('id', $query['product_id'])->first();
+            $currentProduct = $query->productAllStatus;
             $product = $currentProduct ?? json_decode($query['product_details'], true);
-            $product['thumbnail_full_url'] = $currentProduct?->thumbnail_full_url;
+            $product['thumbnail_full_url'] = collect($currentProduct)->has('thumbnail_full_url') ? $currentProduct->thumbnail_full_url : ($product['thumbnail_full_url'] ?? null);
             if (isset($product['product_type']) && $product['product_type'] == 'digital' && $product['digital_product_type'] == 'ready_product' && $product['digital_file_ready']) {
                 $checkFilePath = storageLink('product/digital-product', $product['digital_file_ready'], ($product['storage_path'] ?? 'public'));
                 $product['digital_file_ready_full_url'] = $checkFilePath;

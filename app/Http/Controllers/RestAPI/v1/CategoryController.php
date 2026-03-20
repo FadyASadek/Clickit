@@ -30,7 +30,8 @@ class CategoryController extends Controller
             return $query->whereIn('id', $categoriesID);
         })
             ->with(['product' => function ($query) {
-                return $query->active()->withCount(['orderDetails']);
+                // Select only what's needed for the order matching count, stop pulling full product objects to memory
+                return $query->select('id', 'category_id', 'added_by', 'user_id')->active()->withCount(['orderDetails']);
             }])
             ->withCount(['product' => function ($query) use ($request) {
                 return $query->active()->when($request->has('seller_id') && !empty($request['seller_id']), function ($query) use ($request) {
@@ -48,6 +49,12 @@ class CategoryController extends Controller
             ->where(['position' => 0])->get();
 
         $categories = CategoryManager::getPriorityWiseCategorySortQuery(query: $categories);
+
+        // Remove the massive product relation from the JSON response, we only needed it for sorting
+        $categories->map(function ($category) {
+            unset($category->product);
+            return $category;
+        });
 
         return response()->json($categories->values());
     }

@@ -8,9 +8,16 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Mail;
 
-class EmailVerificationListener
+class EmailVerificationListener implements ShouldQueue
 {
     use EmailTemplateTrait;
+
+    /** Retry up to 3 times if the mail server is briefly unavailable. */
+    public int $tries = 3;
+
+    /** Max seconds a queued mail job may run before being killed. */
+    public int $timeout = 30;
+
     /**
      * Create the event listener.
      */

@@ -2266,14 +2266,18 @@ class ProductManager
             }
         }
 
-        if ($request['rating'] != null) {
-            $productListData = $productListData->map(function ($product) use ($request) {
-                $product->rating = $product?->rating?->pluck('average')[0] ?? 0;
-                return $product;
-            });
-
-            $productListData = $productListData->filter(function ($product) use ($request) {
-                return in_array($product->rating, $request['rating']);
+        if ($request['rating'] != null && is_array($request['rating'])) {
+            // Replaced N+1 PHP mapping with SQL filtering on average rating
+            $ratingFilters = $request['rating'];
+            // Usually ratings come as an array of integers like [4, 5]
+            // where a 4 rating means 4.0 <= average < 5.0
+            $productListData = $productListData->filter(function ($product) use ($ratingFilters) {
+                // If this is a Collection (due to ->get()), filter it natively using eager-loaded relation
+                $avg = $product->reviews_avg_rating ?? ($product?->rating?->avg('average') ?? 0);
+                foreach ($ratingFilters as $ratingMatch) {
+                    if ($avg >= $ratingMatch && $avg < ($ratingMatch + 1)) return true;
+                }
+                return false;
             });
         }
 

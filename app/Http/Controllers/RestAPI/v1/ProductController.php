@@ -280,26 +280,23 @@ class ProductController extends Controller
     {
         $user = Helpers::getCustomerInformation($request);
 
-        $product = Product::active()->with(['reviews.customer', 'seller.shop', 'tags', 'digitalVariation', 'clearanceSale' => function ($query) {
+        $product = Product::active()->with(['seller.shop', 'tags', 'digitalVariation', 'clearanceSale' => function ($query) {
                 return $query->active();
             }])
-            ->withCount(['wishList' => function ($query) use ($user) {
+            ->withCount(['reviews', 'wishList' => function ($query) use ($user) {
                 $query->where('customer_id', $user != 'offline' ? $user->id : '0');
             }])
             ->where(['slug' => $slug])->first();
 
         if (isset($product)) {
+            $reviewsCount = $product->reviews_count ?? 0;
             $restockRequestedIds = $this->restockProductRepo->getListWhere(filters: ['product_id' => $product['id']], dataLimit: 'all')?->pluck('id')->toArray() ?? [];
 
             $product = Helpers::product_data_formatting($product, false);
-            if (isset($product->reviews) && !empty($product->reviews)) {
-                $overallRating = getOverallRating($product->reviews);
-                $product['average_review'] = $overallRating[0];
-            } else {
-                $product['average_review'] = 0;
-            }
+            $averageRating = \App\Models\Review::where('product_id', $product['id'])->avg('rating') ?? 0;
+            $product['average_review'] = round($averageRating, 2);
 
-            $product['reviews_count'] = $product->reviews->count();
+            $product['reviews_count'] = $reviewsCount;
             $product['digital_product_authors_names'] = $this->productService->getProductAuthorsInfo(product: $product)['names'];
             $product['digital_product_publishing_house_names'] = $this->productService->getProductPublishingHouseInfo(product: $product)['names'];
 

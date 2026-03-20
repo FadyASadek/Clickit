@@ -265,10 +265,12 @@ class Product extends Model
 
     public function getIsShopTemporaryCloseAttribute($value): int
     {
-        $inHouseTemporaryClose = Cache::get(IN_HOUSE_SHOP_TEMPORARY_CLOSE_STATUS) ?? 0;
         if ($this->added_by == 'admin') {
-            return $inHouseTemporaryClose ?? 0;
+            return Cache::get(IN_HOUSE_SHOP_TEMPORARY_CLOSE_STATUS) ?? 0;
         } elseif ($this->added_by == 'seller') {
+            if ($this->relationLoaded('seller') && $this->seller?->relationLoaded('shop')) {
+                return $this?->seller?->shop?->temporary_close ?? 0;
+            }
             return Cache::remember('product-shop-close-' . $this->id, 3600, function () {
                 return $this?->seller?->shop?->temporary_close ?? 0;
             });
@@ -363,7 +365,10 @@ class Product extends Model
         if (strpos(url()->current(), '/admin') || strpos(url()->current(), '/vendor') || strpos(url()->current(), '/seller')) {
             return $name;
         }
-        return $this->translations[0]->value ?? $name;
+        if ($this->relationLoaded('translations') && $this->translations->count() > 0) {
+            return $this->translations->first()->value ?? $name;
+        }
+        return $name;
     }
 
     public function getDetailsAttribute($detail): string|null
@@ -371,7 +376,10 @@ class Product extends Model
         if (strpos(url()->current(), '/admin') || strpos(url()->current(), '/vendor') || strpos(url()->current(), '/seller')) {
             return $detail;
         }
-        return $this->translations[1]->value ?? $detail;
+        if ($this->relationLoaded('translations') && $this->translations->count() > 1) {
+            return $this->translations[1]->value ?? $detail;
+        }
+        return $detail;
     }
 
     public function getThumbnailFullUrlAttribute(): string|null|array

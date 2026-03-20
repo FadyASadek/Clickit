@@ -13,13 +13,16 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Route;
 use function App\Utils\payment_gateways;
 
+use Illuminate\Support\Facades\Cache;
+
 class ConfigController extends Controller
 {
     use SettingsTrait, MaintenanceModeTrait, CacheManagerTrait;
 
     public function configuration(): JsonResponse
     {
-        $socialLoginConfig = [];
+        $config = Cache::remember('api_config_cache_' . app()->getLocale(), CACHE_FOR_3_HOURS, function () {
+            $socialLoginConfig = [];
         foreach (getWebConfig(name: 'social_login') as $social) {
             $config = [
                 'login_medium' => $social['login_medium'],
@@ -112,7 +115,8 @@ class ConfigController extends Controller
         }
 
         $systemColors = getWebConfig('colors');
-        return response()->json([
+        
+        return [
             'primary_color' => $systemColors['primary'],
             'secondary_color' => $systemColors['secondary'],
             'primary_color_light' => $systemColors['primary_light'] ?? '',
@@ -226,7 +230,10 @@ class ConfigController extends Controller
             'server_upload_max_filesize' => ini_get('upload_max_filesize'),
             'product_max_unit_price_range' => getProductMaxUnitPriceRange(),
             'product_min_unit_price_range' => getProductMinUnitPriceRange(),
-        ]);
+        ];
+        });
+
+        return response()->json($config);
     }
 
     public function getBusinessPagesList(Request $request)

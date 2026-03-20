@@ -36,12 +36,18 @@ class PhoneVerificationController extends Controller
         }
 
         $token = (env('APP_MODE') == 'live') ? rand(1000, 9999) : 1234;
-        DB::table('phone_or_email_verifications')->insert([
-            'phone_or_email' => $request['phone'],
-            'token' => $token,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        DB::table('phone_or_email_verifications')->updateOrInsert(
+            ['phone_or_email' => $request['phone']],
+            [
+                'phone_or_email'  => $request['phone'],
+                'token'           => $token,
+                'otp_hit_count'   => 0,
+                'is_temp_blocked' => 0,
+                'temp_block_time' => null,
+                'created_at'      => now(),
+                'updated_at'      => now(),
+            ]
+        );
 
         $response = SMSModule::sendCentralizedSMS($request['phone'], $token);
         $otp_resend_time = getWebConfig(name: 'otp_resend_time') > 0 ? getWebConfig(name: 'otp_resend_time') : 0;

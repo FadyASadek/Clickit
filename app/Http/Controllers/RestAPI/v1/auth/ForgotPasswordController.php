@@ -162,31 +162,32 @@ class ForgotPasswordController extends Controller
             return response()->json(['errors' => Helpers::validationErrorProcessor($validator)], 403);
         }
 
+        // Use exact match — identity is stored verbatim (no leading/trailing wildcards needed)
         $data = DB::table('password_resets')
-            ->where('user_type','customer')
-            ->where('identity', 'like', "%{$request['identity']}%")
+            ->where('user_type', 'customer')
+            ->where('identity', $request['identity'])
             ->where(['token' => $request['otp']])->first();
 
         if (!$data) {
             $data = DB::table('phone_or_email_verifications')
-                ->where('phone_or_email', 'like', "%{$request['identity']}%")
+                ->where('phone_or_email', $request['identity'])
                 ->where(['token' => $request['otp']])->first();
         }
 
         if (isset($data)) {
-            User::where('email', 'like', "%{$data->identity}%")
-                ->orWhere('phone', 'like', "%{$data->identity}%")
+            User::where('email', $data->identity)
+                ->orWhere('phone', $data->identity)
                 ->update([
                     'password' => bcrypt(str_replace(' ', '', $request['password']))
                 ]);
 
             DB::table('password_resets')
-                ->where('user_type','customer')
-                ->where('identity', 'like', "%{$request['identity']}%")
+                ->where('user_type', 'customer')
+                ->where('identity', $request['identity'])
                 ->where(['token' => $request['otp']])->delete();
 
             DB::table('phone_or_email_verifications')
-                ->where('phone_or_email', 'like', "%{$request['identity']}%")
+                ->where('phone_or_email', $request['identity'])
                 ->where(['token' => $request['otp']])->delete();
 
             return response()->json(['message' => translate('password_changed_successfully')], 200);

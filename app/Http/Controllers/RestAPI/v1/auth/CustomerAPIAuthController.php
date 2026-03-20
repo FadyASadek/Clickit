@@ -351,8 +351,9 @@ class CustomerAPIAuthController extends Controller
             return response()->json(['errors' => Helpers::validationErrorProcessor($validator)], 403);
         }
 
-        $verify = $this->phoneOrEmailVerificationRepo->getFirstWhere(params: ['phone_or_email' => $request['phone'], 'token' => $request['token']]);
+        // Single fetch — derive token match in PHP (saves one DB round-trip per verify call)
         $verificationData = $this->phoneOrEmailVerificationRepo->getFirstWhere(params: ['phone_or_email' => $request['phone']]);
+        $verify = ($verificationData && $verificationData->token == $request['token']) ? $verificationData : null;
 
         $verifyStatus = $this->checkCustomerOTPBlockTimeOrInvalid(verificationData: $verificationData, identity: $request['phone']);
         if ($verifyStatus['status'] == 1) {
@@ -401,8 +402,9 @@ class CustomerAPIAuthController extends Controller
         $maxOTPHitTime = getWebConfig(name: 'otp_resend_time') ?? 60;// seconds
         $tempBlockTime = getWebConfig(name: 'temporary_block_time') ?? 600; // seconds
 
-        $verify = $this->phoneOrEmailVerificationRepo->getFirstWhere(params: ['phone_or_email' => $request['email'], 'token' => $request['token']]);
+        // Single fetch — derive token match in PHP (saves one DB round-trip per verify call)
         $verificationData = $this->phoneOrEmailVerificationRepo->getFirstWhere(params: ['phone_or_email' => $request['email']]);
+        $verify = ($verificationData && $verificationData->token == $request['token']) ? $verificationData : null;
 
         $verifyStatus = $this->checkCustomerOTPBlockTimeOrInvalid(verificationData: $verificationData, identity: $request['email']);
         if ($verifyStatus['status'] == 1) {

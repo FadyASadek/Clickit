@@ -31,19 +31,17 @@ class BrandController extends Controller
         }
 
         $brands = self::getPriorityWiseBrandProductsQuery(query: $brands);
-        $currentPage = $request['offset'] ?? Paginator::resolveCurrentPage('page');
-        $totalSize = $brands->count();
-        $brands = $brands->forPage($currentPage, $request->get('limit', DEFAULT_DATA_LIMIT));
+        $limit = $request['limit'] ?? 10;
+        $offset = $request['offset'] ?? 1;
 
-        $brands = new LengthAwarePaginator($brands, $totalSize, $request->get('limit', DEFAULT_DATA_LIMIT), $currentPage, [
-            'path' => Paginator::resolveCurrentPath(),
-            'appends' => $request->all(),
-        ]);
+        // Apply pagination directly to SQL query instead of fetching all brands into PHP memory
+        $paginator = $brands->paginate($limit, ['*'], 'page', $offset);
+        
         return [
-            'total_size' => $brands->total(),
-            'limit' => (int)$request['limit'],
-            'offset' => (int)$request['offset'],
-            'brands' => $brands->values()
+            'total_size' => $paginator->total(),
+            'limit' => (int)$limit,
+            'offset' => (int)$offset,
+            'brands' => $paginator->items()
         ];
     }
 
@@ -54,21 +52,21 @@ class BrandController extends Controller
             if ($brandProductSortBy['sort_by'] == 'most_order') {
                 return $query->withCount(['brandProducts as order_count' => function ($query) {
                     $query->join('order_details', 'products.id', '=', 'order_details.product_id');
-                }])->orderByDesc('order_count')->get();
+                }])->orderByDesc('order_count');
             } elseif ($brandProductSortBy['sort_by'] == 'latest_created') {
-                return $query->latest()->get();
+                return $query->latest();
             } elseif ($brandProductSortBy['sort_by'] == 'first_created') {
-                return $query->orderBy('id', 'asc')->get();
+                return $query->orderBy('id', 'asc');
             } elseif ($brandProductSortBy['sort_by'] == 'a_to_z') {
-                return $query->orderBy('name', 'asc')->get();
+                return $query->orderBy('name', 'asc');
             } elseif ($brandProductSortBy['sort_by'] == 'z_to_a') {
-                return $query->orderBy('name', 'desc')->get();
+                return $query->orderBy('name', 'desc');
             } else {
-                return $query->get();
+                return $query;
             }
         }
 
-        return $query->latest()->get();
+        return $query->latest();
     }
 
     public function get_products(Request $request, $brand_id)

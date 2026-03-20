@@ -33,12 +33,18 @@ class EmailVerificationController extends Controller
         }
 
         $token = rand(1000, 9999);
-        DB::table('phone_or_email_verifications')->insert([
-            'phone_or_email' => $request['email'],
-            'token' => $token,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        DB::table('phone_or_email_verifications')->updateOrInsert(
+            ['phone_or_email' => $request['email']],
+            [
+                'phone_or_email' => $request['email'],
+                'token'          => $token,
+                'otp_hit_count'  => 0,
+                'is_temp_blocked'=> 0,
+                'temp_block_time'=> null,
+                'created_at'     => now(),
+                'updated_at'     => now(),
+            ]
+        );
 
         $otp_resend_time = 0;
         $emailServices_smtp = getWebConfig(name: 'mail_config');

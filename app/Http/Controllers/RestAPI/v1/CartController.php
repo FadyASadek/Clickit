@@ -78,7 +78,10 @@ class CartController extends Controller
                 ->groupBy('cart_group_id');
                 
             $freeDeliveryAmounts = [];
+            $minimumOrderAmounts = [];
             foreach ($cartGroupIds as $groupId) {
+                $minimumOrderAmounts[$groupId] = OrderManager::verifyCartListMinimumOrderAmount($request, $groupId)['minimum_order_amount'];
+                
                 if (isset($groupedCarts[$groupId])) {
                     $freeDeliveryAmounts[$groupId] = OrderManager::getFreeDeliveryOrderAmountArray($groupId);
                 } else {
@@ -91,7 +94,7 @@ class CartController extends Controller
                 }
             }
 
-            $cart->map(function ($data) use ($request, $products, $groupedCarts, $freeDeliveryAmounts) {
+            $cart->map(function ($data) use ($request, $products, $groupedCarts, $freeDeliveryAmounts, $minimumOrderAmounts) {
                 $product = $products[$data->product_id] ?? null;
                 if ($product) {
                     $data['is_product_available'] = 1;
@@ -101,7 +104,7 @@ class CartController extends Controller
                 $data['choices'] = json_decode($data['choices']);
                 $data['variations'] = json_decode($data['variations']);
 
-                $data['minimum_order_amount_info'] = OrderManager::verifyCartListMinimumOrderAmount($request, $data['cart_group_id'])['minimum_order_amount'];
+                $data['minimum_order_amount_info'] = $minimumOrderAmounts[$data['cart_group_id']] ?? 0;
 
                 $data['free_delivery_order_amount'] = $freeDeliveryAmounts[$data['cart_group_id']] ?? [
                     'status' => 0,
