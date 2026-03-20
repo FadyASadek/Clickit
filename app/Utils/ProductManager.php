@@ -58,27 +58,28 @@ class ProductManager
             ->paginate($limit, ['*'], 'page', $offset);
 
         $currentDate = date('Y-m-d H:i:s');
-        $paginator?->map(function ($product) use ($currentDate) {
-            $flashDealStatus = 0;
-            $flashDealEndDate = 0;
-            if (count($product->flashDealProducts) > 0) {
-                $flashDeal = null;
-                foreach ($product->flashDealProducts as $flashDealData) {
-                    if ($flashDealData->flashDeal) {
-                        $flashDeal = $flashDealData->flashDeal;
+        if ($paginator) {
+            foreach ($paginator->items() as $product) {
+                $flashDealStatus = 0;
+                $flashDealEndDate = 0;
+                if (count($product->flashDealProducts) > 0) {
+                    $flashDeal = null;
+                    foreach ($product->flashDealProducts as $flashDealData) {
+                        if ($flashDealData->flashDeal) {
+                            $flashDeal = $flashDealData->flashDeal;
+                        }
+                    }
+                    if ($flashDeal) {
+                        $startDate = date('Y-m-d H:i:s', strtotime($flashDeal->start_date));
+                        $endDate = date('Y-m-d H:i:s', strtotime($flashDeal->end_date));
+                        $flashDealStatus = $flashDeal->status == 1 && (($currentDate >= $startDate) && ($currentDate <= $endDate)) ? 1 : 0;
+                        $flashDealEndDate = $flashDeal->end_date;
                     }
                 }
-                if ($flashDeal) {
-                    $startDate = date('Y-m-d H:i:s', strtotime($flashDeal->start_date));
-                    $endDate = date('Y-m-d H:i:s', strtotime($flashDeal->end_date));
-                    $flashDealStatus = $flashDeal->status == 1 && (($currentDate >= $startDate) && ($currentDate <= $endDate)) ? 1 : 0;
-                    $flashDealEndDate = $flashDeal->end_date;
-                }
+                $product['flash_deal_status'] = $flashDealStatus;
+                $product['flash_deal_end_date'] = $flashDealEndDate;
             }
-            $product['flash_deal_status'] = $flashDealStatus;
-            $product['flash_deal_end_date'] = $flashDealEndDate;
-            return $product;
-        });
+        }
 
         return [
             'total_size' => $paginator->total(),
@@ -185,9 +186,9 @@ class ProductManager
             $getReviewProductIds[] = $review['product_id'];
         }
 
-        $productListData = Product::active()->withSum('orderDetails', 'qty', function ($query) {
+        $productListData = Product::active()->withSum(['orderDetails' => function ($query) {
             $query->where('delivery_status', 'delivered');
-        })
+        }], 'qty')
             ->with(['seller.shop', 'category', 'reviews', 'rating', 'flashDealProducts.flashDeal',
                 'wishList' => function ($query) use ($user) {
                     return $query->where('customer_id', $user != 'offline' ? $user->id : '0');
@@ -245,9 +246,9 @@ class ProductManager
             $getOrderedProductIds[] = $detail['product_id'];
         }
 
-        $productListData = Product::active()->withSum('orderDetails', 'qty', function ($query) {
+        $productListData = Product::active()->withSum(['orderDetails' => function ($query) {
             $query->where('delivery_status', 'delivered');
-        })
+        }], 'qty')
             ->with(['seller.shop', 'category', 'reviews', 'rating', 'flashDealProducts.flashDeal',
                 'wishList' => function ($query) use ($user) {
                     return $query->where('customer_id', $user != 'offline' ? $user->id : '0');
@@ -2004,9 +2005,9 @@ class ProductManager
             }])
             ->withAvg('reviews', 'rating')
             ->withCount(['reviews'])
-            ->withSum('orderDetails', 'qty', function ($query) {
+            ->withSum(['orderDetails' => function ($query) {
                 $query->where('delivery_status', 'delivered');
-            })
+            }], 'qty')
             ->when($productAddedBy == 'admin', function ($query) use ($productAddedBy) {
                 return $query->where(['added_by' => $productAddedBy]);
             })
