@@ -30,6 +30,9 @@ class NotificationController extends Controller
     public function notification_seen(Request $request)
     {
         $user = $request->user();
+        if (!$request->id) {
+            return response()->json(['message' => 'Notification ID is required'], 400);
+        }
         NotificationSeen::updateOrInsert(['user_id' => $user->id, 'notification_id' => $request->id],[
             'created_at' => Carbon::now(),
         ]);

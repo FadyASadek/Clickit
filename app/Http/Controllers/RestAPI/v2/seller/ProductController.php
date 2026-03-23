@@ -614,6 +614,9 @@ class ProductController extends Controller
         }
 
         $product = Product::find($request->id);
+        if (!$product) {
+            return response()->json(['message' => translate('Product not found')], 404);
+        }
         $product->status = $request->status;
         $product->save();
 

@@ -1779,8 +1779,7 @@ class ProductManager
 
     public static function getPublishingHouseList($productIds = [], $vendorId = null): mixed
     {
-        $publishingHouseList = PublishingHouse::with(['publishingHouseProducts.product'])
-            ->withCount(['publishingHouseProducts' => function ($query) use ($productIds, $vendorId) {
+        $publishingHouseList = PublishingHouse::withCount(['publishingHouseProducts' => function ($query) use ($productIds, $vendorId) {
                 return $query->whereHas('product', function ($query) use ($productIds, $vendorId) {
                     return $query->active()->where('product_type', 'digital')->when(!empty($productIds), function ($query) use ($productIds) {
                         return $query->whereIn('id', $productIds);
@@ -1808,12 +1807,8 @@ class ProductManager
             })
             ->get()->sortByDesc('publishing_house_products_count');
 
-        $productIdsArray = [];
-        $publishingHouseList->each(function ($publishingHouseGroup) use (&$productIdsArray) {
-            $publishingHouseGroup?->publishingHouseProducts?->each(function ($publishingHouse) use (&$productIdsArray) {
-                $productIdsArray[] = $publishingHouse->product_id;
-            });
-        });
+        $productIdsArray = \App\Models\DigitalProductPublishingHouse::whereIn('publishing_house_id', $publishingHouseList->pluck('id'))
+            ->pluck('product_id')->toArray();
 
         if (request()->is('flash-deals*')) {
             $productIdsArray = self::getFlashDealProductsArray();
@@ -1884,12 +1879,8 @@ class ProductManager
             });
         })->orderBy('name', 'asc')->get()->sortByDesc('digital_product_author_count');
 
-        $productIdsArray = [];
-        $authorList->each(function ($authorGroup) use (&$productIdsArray) {
-            $authorGroup?->digitalProductAuthor?->each(function ($authorItem) use (&$productIdsArray) {
-                $productIdsArray[] = $authorItem->product_id;
-            });
-        });
+        $productIdsArray = \App\Models\DigitalProductAuthor::whereIn('author_id', $authorList->pluck('id'))
+            ->pluck('product_id')->toArray();
 
         if (request()->is('flash-deals*')) {
             $productIdsArray = self::getFlashDealProductsArray();

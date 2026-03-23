@@ -469,7 +469,10 @@ class CustomerController extends Controller
     public function getOrderInvoice(Request $request)
     {
         $order = Order::with('seller')->with('shipping')->where('id', $request['order_id'])->first();
-        $data["email"] = $order->customer["email"];
+        if (!$order) {
+            return response()->json(['message' => 'Order not found'], 404);
+        }
+        $data["email"] = $order->customer ? $order->customer["email"] : '';
         $data["order"] = $order;
         $invoiceSettings = json_decode(BusinessSetting::where(['type' => 'invoice_settings'])->first()?->value, true);
         $mpdf_view = \View::make(VIEW_FILE_NAMES['order_invoice'], compact('order', 'invoiceSettings'));
@@ -635,5 +638,19 @@ class CustomerController extends Controller
         }
 
         return response()->json(['message' => 'Successfully change'], 200);
+    }
+
+    public function get_address(Request $request, $id): \Illuminate\Http\JsonResponse
+    {
+        $user = Helpers::getCustomerInformation($request);
+        $address = \App\Models\ShippingAddress::where([
+            'customer_id' => $user == 'offline' ? $request->guest_id : $user->id,
+            'id' => $id
+        ])->first();
+
+        if (!$address) {
+            return response()->json(['message' => translate('not_found')], 404);
+        }
+        return response()->json($address, 200);
     }
 }

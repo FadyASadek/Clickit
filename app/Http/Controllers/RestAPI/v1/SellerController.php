@@ -85,124 +85,155 @@ class SellerController extends Controller
         if ($limit < 1) $limit = 10;
         if ($limit > 50) $limit = 50;
         $request->merge(['limit' => $limit]);
+        $offset = $request['offset'] ?? 1;
 
-        $products = ProductManager::get_seller_products($seller_id, $request);
-        
-        $productsList = $products->total() > 0 ? Helpers::product_data_formatting($products->items(), true) : [];
-        $productsList = Helpers::product_payload_scrub($productsList);
+        $cacheKey = "api_v1_vendor_products_{$seller_id}_{$limit}_{$offset}_lang_" . app()->getLocale();
+        $cacheResult = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60*60*4, function() use ($seller_id, $request, $limit, $offset) {
+            $products = ProductManager::get_seller_products($seller_id, $request);
+            
+            $productsList = $products->total() > 0 ? Helpers::product_data_formatting($products->items(), true) : [];
+            $productsList = Helpers::product_payload_scrub($productsList);
+
+            return [
+                'total_size' => $products->total(),
+                'limit' => (int)$limit,
+                'offset' => (int)$offset,
+                'products' => array_values($productsList)
+            ];
+        });
 
         if ($requestedLimit === 'all') {
-            return response()->json(array_values($productsList), 200);
+            return response()->json($cacheResult['products'], 200);
         }
 
-        return response()->json([
-            'total_size' => $products->total(),
-            'limit' => (int)$limit,
-            'offset' => (int)$request['offset'],
-            'products' => array_values($productsList)
-        ]);
+        return response()->json($cacheResult);
     }
 
     public function getSellerList(Request $request, $type)
     {
-        $sellers = $this->seller->when($type == 'top', function($query){
-                return $query->whereHas('orders');
-            })
-            ->approved()->with(['shop', 'orders', 'product.reviews' => function ($query) {
-                $query->active();
-            }])
-            ->withCount(['orders', 'product' => function ($query) {
-                $query->active();
-            }])
-            ->get()
-            ->each(function ($seller) {
+        $limit = $request->get('limit', DEFAULT_DATA_LIMIT);
+        $offset = $request['offset'] ?? Paginator::resolveCurrentPage('page');
+        $cacheKey = "api_v1_seller_list_{$type}_limit_{$limit}_offset_{$offset}";
+        
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 60*60*4, function() use ($type, $request, $limit, $offset) {
+            $sellers = $this->seller->when($type == 'top', function($query){
+                    return $query->whereHas('orders');
+                })
+                ->approved()->with(['shop'])
+                ->withCount(['orders'])
+                ->get();
+
+            $sellerIds = $sellers->pluck('id')->toArray();
+
+            // Fetch grouped review stats per seller directly from DB
+            $reviewStats = \Illuminate\Support\Facades\DB::table('reviews')
+                ->join('products', 'reviews.product_id', '=', 'products.id')
+                ->where('reviews.status', 1)
+                ->where('products.added_by', 'seller')
+                ->where('products.status', 1)
+                ->whereIn('products.user_id', $sellerIds)
+                ->whereNull('reviews.delivery_man_id')
+                ->select('products.user_id as seller_id', \Illuminate\Support\Facades\DB::raw('COUNT(reviews.id) as review_count'), \Illuminate\Support\Facades\DB::raw('SUM(reviews.rating) as total_rating'))
+                ->groupBy('products.user_id')
+                ->get()
+                ->keyBy('seller_id');
+
+            // Fetch active product count per seller
+            $productStats = \Illuminate\Support\Facades\DB::table('products')
+                ->where('added_by', 'seller')
+                ->where('status', 1)
+                ->whereIn('user_id', $sellerIds)
+                ->select('user_id as seller_id', \Illuminate\Support\Facades\DB::raw('COUNT(id) as product_count'))
+                ->groupBy('user_id')
+                ->get()
+                ->keyBy('seller_id');
+
+            $sellers->each(function ($seller) use ($reviewStats, $productStats) {
                 $seller['temporary_close'] = (int)$seller?->shop?->temporary_close ?? 0;
-                $seller->product?->map(function ($product) {
-                    $product['rating'] = $product?->reviews?->where('status', 1)->pluck('rating')->sum();
-                    $product['rating_count'] = $product->reviews?->where('status', 1)->count();
-                    $product['rating_count'] = $product->reviews?->where('status', 1)->count();
-                });
-                $seller['total_rating'] = $seller?->product->pluck('rating')->sum();
-                $seller['rating_count'] = $seller->product->pluck('rating_count')->sum();
-                $seller['review_count'] = $seller->product->pluck('rating_count')->sum();
+                
+                $stats = $reviewStats->get($seller->id);
+                $seller['total_rating'] = $stats ? (float)$stats->total_rating : 0;
+                $seller['rating_count'] = $stats ? (int)$stats->review_count : 0;
+                $seller['review_count'] = $stats ? (int)$stats->review_count : 0;
+                $seller['product_count'] = $productStats->get($seller->id)?->product_count ?? 0;
                 $seller['average_rating'] = $seller['total_rating'] / ($seller['rating_count'] == 0 ? 1 : $seller['rating_count']);
                 $seller->is_vacation_mode_now = checkVendorAbility(type: 'vendor', status: 'vacation_status', vendor: $seller?->shop);
+            });
 
-                unset($seller['product']);
-                unset($seller['orders']);
+            $inhouseProducts = Product::active()->with(['reviews', 'rating'])
+            ->withCount(['reviews' => function ($query) {
+                $query->active();
+            }])
+            ->where(['added_by' => 'admin'])->get();
+            $inhouseProductCount = $inhouseProducts->count();
+
+            $inhouseReviewData = Review::active()->whereIn('product_id', $inhouseProducts->pluck('id'));
+            $inhouseReviewDataCount = $inhouseReviewData->count();
+            $inhouseRattingStatusPositive = (clone $inhouseReviewData)->where('rating', '>=', 4)->count();
+
+            $inhouseShop = $this->getInHouseShopObject();
+            $inhouseShop->id = 0;
+
+            $inhouseSeller = $this->getInHouseSellerObject();
+            $inhouseSeller->id = 0;
+            $inhouseSeller->total_rating = $inhouseReviewDataCount;
+            $inhouseSeller->rating_count = $inhouseReviewDataCount;
+            $inhouseSeller->review_count = $inhouseReviewDataCount;
+            $inhouseSeller->product_count = $inhouseProductCount;
+            $inhouseSeller->average_rating = $inhouseReviewData->avg('rating');
+            $inhouseSeller->positive_review = $inhouseReviewDataCount != 0 ? ($inhouseRattingStatusPositive * 100) / $inhouseReviewDataCount : 0;
+            $inhouseSeller->orders_count = Order::where(['seller_is' => 'admin'])->count();
+            $inhouseSeller->temporary_close = (int)$inhouseShop->temporary_close ?? 0;
+            $inhouseSeller->shop = $inhouseShop;
+            $sellers->prepend($inhouseSeller);
+
+            if ($type == 'top') {
+                $sellers = ProductManager::getPriorityWiseTopVendorQuery(query: $sellers);
+            } elseif ($type == 'new') {
+                $sellers = $sellers->sortByDesc('id');
+            } else {
+                $sellers = ProductManager::getPriorityWiseVendorQuery(query: $sellers);
+            }
+
+            $totalSize = $sellers->count();
+            $sellers = $sellers->forPage($offset, $limit);
+
+            $sellers = new LengthAwarePaginator($sellers, $totalSize, $limit, $offset, [
+                'path' => Paginator::resolveCurrentPath(),
+                'appends' => $request->all(),
+            ]);
+
+            return [
+                'total_size' => $sellers->total(),
+                'limit' => (int)$limit,
+                'offset' => (int)$offset,
+                'sellers' => $sellers->values()
+            ];
         });
-
-        $inhouseProducts = Product::active()->with(['reviews', 'rating'])
-        ->withCount(['reviews' => function ($query) {
-            $query->active();
-        }])
-        ->where(['added_by' => 'admin'])->get();
-        $inhouseProductCount = $inhouseProducts->count();
-
-        $inhouseReviewData = Review::active()->whereIn('product_id', $inhouseProducts->pluck('id'));
-        $inhouseReviewDataCount = $inhouseReviewData->count();
-        $inhouseRattingStatusPositive = (clone $inhouseReviewData)->where('rating', '>=', 4)->count();
-
-        $inhouseShop = $this->getInHouseShopObject();
-        $inhouseShop->id = 0;
-
-        $inhouseSeller = $this->getInHouseSellerObject();
-        $inhouseSeller->id = 0;
-        $inhouseSeller->total_rating = $inhouseReviewDataCount;
-        $inhouseSeller->rating_count = $inhouseReviewDataCount;
-        $inhouseSeller->review_count = $inhouseReviewDataCount;
-        $inhouseSeller->product_count = $inhouseProductCount;
-        $inhouseSeller->average_rating = $inhouseReviewData->avg('rating');
-        $inhouseSeller->positive_review = $inhouseReviewDataCount != 0 ? ($inhouseRattingStatusPositive * 100) / $inhouseReviewDataCount : 0;
-        $inhouseSeller->orders_count = Order::where(['seller_is' => 'admin'])->count();
-        $inhouseSeller->temporary_close = (int)$inhouseShop->temporary_close ?? 0;
-        $inhouseSeller->shop = $inhouseShop;
-        $sellers->prepend($inhouseSeller);
-
-        if ($type == 'top') {
-            $sellers = ProductManager::getPriorityWiseTopVendorQuery(query: $sellers);
-        } elseif ($type == 'new') {
-            $sellers = $sellers->sortByDesc('id');
-        } else {
-            $sellers = ProductManager::getPriorityWiseVendorQuery(query: $sellers);
-        }
-
-        $currentPage = $request['offset'] ?? Paginator::resolveCurrentPage('page');
-        $totalSize = $sellers->count();
-        $sellers = $sellers->forPage($currentPage, $request->get('limit', DEFAULT_DATA_LIMIT));
-
-        $sellers = new LengthAwarePaginator($sellers, $totalSize, $request->get('limit', DEFAULT_DATA_LIMIT), $currentPage, [
-            'path' => Paginator::resolveCurrentPath(),
-            'appends' => $request->all(),
-        ]);
-
-        return [
-            'total_size' => $sellers->total(),
-            'limit' => (int)$request['limit'],
-            'offset' => (int)$request['offset'],
-            'sellers' => $sellers->values()
-        ];
-
     }
 
     public function more_sellers(Request $request)
     {
         $limit = $request->get('limit', 15);
-        $topVendorsList = Shop::active()
-            ->whereHas('seller', function($query){
-                return $query->whereHas('orders');
-            })
-            ->with(['seller' => function ($query) {
-                $query->withCount(['orders']);
-            }])
-            ->orderByDesc(\App\Models\Order::selectRaw('count(*)')
-                ->whereColumn('seller_id', 'shops.seller_id')
-                ->where('seller_is', 'seller')
-            )
-            ->take($limit)
-            ->get();
+        $cacheKey = "api_v1_more_sellers_{$limit}";
+        
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 60*60*4, function() use ($limit) {
+            $topVendorsList = Shop::active()
+                ->whereHas('seller', function($query){
+                    return $query->whereHas('orders');
+                })
+                ->with(['seller' => function ($query) {
+                    $query->withCount(['orders']);
+                }])
+                ->orderByDesc(\App\Models\Order::selectRaw('count(*)')
+                    ->whereColumn('seller_id', 'shops.seller_id')
+                    ->where('seller_is', 'seller')
+                )
+                ->take($limit)
+                ->get();
 
-        return array_values($topVendorsList->toArray());
+            return array_values($topVendorsList->toArray());
+        });
     }
 
     public function get_seller_best_selling_products($seller_id, Request $request)
@@ -211,18 +242,23 @@ class SellerController extends Controller
         $limit  = (int) ($request['limit']  ?? 10);
         if ($limit < 1) $limit = 10;
         if ($limit > 50) $limit = 50;
+        $offset = $request['offset'] ?? 1;
 
-        $products = ProductManager::get_seller_best_selling_products($request, $seller_id, $limit, $request['offset']);
-        $productsList = isset($products['products'][0]) ? Helpers::product_data_formatting($products['products'], true) : [];
-        $productsList = Helpers::product_payload_scrub($productsList);
+        $cacheKey = "api_v1_bg_sell_seller_{$seller_id}_{$limit}_{$offset}_lang_" . app()->getLocale();
+        $cacheResult = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60*60*4, function() use ($seller_id, $request, $limit, $offset) {
+            $products = ProductManager::get_seller_best_selling_products($request, $seller_id, $limit, $offset);
+            $productsList = isset($products['products'][0]) ? Helpers::product_data_formatting($products['products'], true) : [];
+            $productsList = Helpers::product_payload_scrub($productsList);
+            $products['products'] = array_values($productsList);
+            $products['limit'] = (int)$limit;
+            return $products;
+        });
 
         if ($requestedLimit === 'all') {
-            return response()->json(array_values($productsList), 200);
+            return response()->json($cacheResult['products'], 200);
         }
 
-        $products['products'] = array_values($productsList);
-        $products['limit'] = (int)$limit;
-        return response()->json($products, 200);
+        return response()->json($cacheResult, 200);
     }
 
     public function get_sellers_featured_product($seller_id, Request $request)

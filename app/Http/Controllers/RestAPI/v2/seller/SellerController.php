@@ -87,6 +87,9 @@ class SellerController extends Controller
 
         if ($data['success'] == 1) {
             $reviews = Review::find($request->id);
+            if (!$reviews) {
+                return response()->json(['message' => translate('Review not found')], 404);
+            }
             $reviews->status = $request->status;
             $reviews->save();
             return response()->json(['message'=>translate('status updated successfully!!')],200);

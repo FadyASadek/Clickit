@@ -169,6 +169,9 @@ class SellerController extends Controller
     public function shop_product_reviews_status(Request $request)
     {
         $reviews = Review::find($request->id);
+        if (!$reviews) {
+            return response()->json(['message' => translate('Review not found')], 404);
+        }
         $reviews->status = $request->status;
         $reviews->save();
         return response()->json(['message' => translate('status updated successfully!!')], 200);
@@ -577,7 +580,7 @@ class SellerController extends Controller
 
     public function getEarningStatics(Request $request): JsonResponse
     {
-        $dateType = $request['type'];
+        $dateType = $request['type'] ?? 'yearEarn';
         $dateTypeArray = $this->dashboardService->getDateTypeData(dateType: $dateType);
         $from = $dateTypeArray['from'];
         $to = $dateTypeArray['to'];

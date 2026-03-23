@@ -366,6 +366,9 @@ class OrderController extends Controller
     public function refund_request(Request $request): JsonResponse
     {
         $order_details = OrderDetail::find($request->order_details_id);
+        if (!$order_details) {
+            return response()->json(['message' => translate('Order_details_not_found')], 404);
+        }
 
         $user = $request->user();
         $loyaltyPointStatus = getWebConfig(name: 'loyalty_point_status');
@@ -475,6 +478,9 @@ class OrderController extends Controller
     public function refund_details(Request $request): JsonResponse
     {
         $orderDetails = OrderDetail::find($request->id);
+        if (!$orderDetails) {
+            return response()->json(['message' => translate('Order_details_not_found')], 404);
+        }
         $refund = RefundRequest::where('customer_id', $request->user()->id)
             ->with(['refundStatus'])
             ->where('order_details_id', $orderDetails->id)->get();

@@ -1346,6 +1346,9 @@ class ProductController extends Controller
     public function review_list(Request $request, $product_id)
     {
         $product = Product::withCount('reviews')->find($product_id);
+        if (!$product) {
+            return response()->json(['message' => translate('Product not found')], 404);
+        }
         $average_rating = count($product->rating) > 0 ? number_format($product->rating[0]->average, 2, '.', ' ') : 0;
         $reviews = Review::with(['customer', 'product', 'reply'])->where(['product_id' => $product_id])
             ->latest('updated_at')

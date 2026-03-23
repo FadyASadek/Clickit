@@ -1,0 +1,7 @@
+{
+    "id": 6,
+    "email": "test_seller@clickit.com",
+    "auth_token": "vo4MEl8uFpoDujxw9tgd5ORWyBiF2UxChBDGgWIEmmMsvZ5DRK",
+    "password": "password123",
+    "shop_id": 6
+}

@@ -73,7 +73,7 @@ class CompareController extends Controller
             }
 
             $this->product_compare->insert([
-                'user_id' => auth('customer')->id(),
+                'user_id' => $request->user()->id,
                 'product_id' => $request['product_id']
             ]);
         }
