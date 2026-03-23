@@ -67,6 +67,9 @@ class ShopController extends Controller
     {
 
         $seller = $request->seller;
+        if (!$request->id) {
+            return response()->json(['message' => 'Notification ID is required'], 400);
+        }
         NotificationSeen::updateOrInsert(['seller_id' => $seller->id, 'notification_id' => $request->id], [
             'created_at' => Carbon::now(),
         ]);

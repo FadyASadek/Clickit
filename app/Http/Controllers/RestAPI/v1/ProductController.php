@@ -50,6 +50,13 @@ class ProductController extends Controller
         private readonly CategoryRepositoryInterface               $categoryRepo,
     )
     {
+        $this->middleware(function ($request, $next) {
+            $request->merge([
+                'limit' => $request->limit > 0 ? $request->limit : 10,
+                'offset' => $request->offset > 0 ? $request->offset : 1
+            ]);
+            return $next($request);
+        });
     }
 
     public function get_latest_products(Request $request): JsonResponse

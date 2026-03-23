@@ -66,6 +66,9 @@ class RefundController extends Controller
             ], 401);
         }
         $order_details = OrderDetail::find($request->order_details_id);
+        if (!$order_details) {
+            return response()->json(['message' => translate('Order details not found')], 404);
+        }
         $refund_request = RefundRequest::with('refund_status')->where('order_details_id',$request->order_details_id)->get();
 
             $order = Order::find($order_details->order_id);

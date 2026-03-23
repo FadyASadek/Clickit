@@ -205,6 +205,10 @@ class Helpers
 
     public static function product_payload_scrub($productFinal)
     {
+        if (empty($productFinal) || (!is_array($productFinal) && !is_object($productFinal))) {
+            return [];
+        }
+
         // STRICT PAYLOAD SCRUBBING: Preserve structural JSON keys to prevent Mobile App crashes
         $arrayFields = [
             'attributes', 'choice_options', 'variation', 'colors', 'colors_formatted', 

@@ -1,0 +1,107 @@
+﻿Using Seller Token: vo4MEl8uFpoDujxw9tgd5ORWyBiF2UxChBDGgWIEmmMsvZ5DRK
+≡اأ Starting automated Seller API testing (v2 & v3)...
+ -> /api/v2/seller/seller-info [200] ≡اات OK
+ -> /api/v2/seller/seller-delivery-man [200] ≡اات OK
+ -> /api/v2/seller/shop-product-reviews [200] ≡اات OK
+   [!] CRASH DETECTED ON: /api/v2/seller/shop-product-reviews-status
+{"errors":[{"code":"server_error","message":"Attempt to assign property \"status\" on null"}]}...
+ -> /api/v2/seller/shop-product-reviews-status [500] ≡ا¤┤ Error 500
+ -> /api/v2/seller/monthly-earning [200] ≡اات OK
+ -> /api/v2/seller/monthly-commission-given [200] ≡اات OK
+ -> /api/v2/seller/shop-info [200] ≡اات OK
+ -> /api/v2/seller/transactions [200] ≡اات OK
+ -> /api/v2/seller/brands [200] ≡اات OK
+ -> /api/v2/seller/products/list [200] ≡اات OK
+ -> /api/v2/seller/products/stock-out-list [200] ≡اات OK
+   [!] CRASH DETECTED ON: /api/v2/seller/products/status-update
+{"errors":[{"code":"server_error","message":"Attempt to assign property \"status\" on null"}]}...
+ -> /api/v2/seller/products/status-update [500] ≡ا¤┤ Error 500
+ -> /api/v2/seller/products/edit/{id} [200] ≡اات OK
+ -> /api/v2/seller/products/barcode/generate [422] ≡ااب Validation Error
+ -> /api/v2/seller/orders/list [200] ≡اات OK
+ -> /api/v2/seller/orders/{id} [200] ≡اات OK
+ -> /api/v2/seller/refund/list [200] ≡اات OK
+   [!] CRASH DETECTED ON: /api/v2/seller/refund/refund-details
+{"errors":[{"code":"server_error","message":"Attempt to read property \"order_id\" on null"}]}...
+ -> /api/v2/seller/refund/refund-details [500] ≡ا¤┤ Error 500
+ -> /api/v2/seller/shipping/get-shipping-method [200] ≡اات OK
+ -> /api/v2/seller/shipping/selected-shipping-method [200] ≡اات OK
+ -> /api/v2/seller/shipping/all-category-cost [200] ≡اات OK
+ -> /api/v2/seller/shipping-method/list [200] ≡اات OK
+ -> /api/v2/seller/shipping-method/edit/{id} [200] ≡اات OK
+ -> /api/v2/seller/messages/list/{type} [200] ≡اات OK
+ -> /api/v2/seller/messages/get-message/{type}/{id} [200] ≡اات OK
+ -> /api/v2/seller/messages/search/{type} [200] ≡اات OK
+ -> /api/v3/seller/seller-info [200] ≡اات OK
+ -> /api/v3/seller/get-earning-statitics [200] ≡اات OK
+ -> /api/v3/seller/order-statistics [200] ≡اات OK
+ -> /api/v3/seller/seller-delivery-man [200] ≡اات OK
+ -> /api/v3/seller/shop-product-reviews [200] ≡اات OK
+   [!] CRASH DETECTED ON: /api/v3/seller/shop-product-reviews-status
+{"errors":[{"code":"server_error","message":"Attempt to assign property \"status\" on null"}]}...
+ -> /api/v3/seller/shop-product-reviews-status [500] ≡ا¤┤ Error 500
+ -> /api/v3/seller/monthly-earning [200] ≡اات OK
+ -> /api/v3/seller/monthly-commission-given [200] ≡اات OK
+ -> /api/v3/seller/shop-info [200] ≡اات OK
+ -> /api/v3/seller/transactions [200] ≡اات OK
+ -> /api/v3/seller/withdraw-method-list [200] ≡اات OK
+ -> /api/v3/seller/brands [200] ≡اات OK
+ -> /api/v3/seller/top-delivery-man [200] ≡اات OK
+ -> /api/v3/seller/categories [200] ≡اات OK
+ -> /api/v3/seller/products/list [200] ≡اات OK
+ -> /api/v3/seller/products/details/{id} [200] ≡اات OK
+ -> /api/v3/seller/products/stock-out-list [200] ≡اات OK
+ -> /api/v3/seller/products/edit/{id} [200] ≡اات OK
+   [!] CRASH DETECTED ON: /api/v3/seller/products/review-list/{id}
+{"errors":[{"code":"server_error","message":"Attempt to read property \"rating\" on null"}]}...
+ -> /api/v3/seller/products/review-list/{id} [500] ≡ا¤┤ Error 500
+ -> /api/v3/seller/products/barcode/generate [422] ≡ااب Validation Error
+ -> /api/v3/seller/products/top-selling-product [200] ≡اات OK
+ -> /api/v3/seller/products/most-popular-product [200] ≡اات OK
+ -> /api/v3/seller/products/get-product-images/{id} [200] ≡اات OK
+ -> /api/v3/seller/products/stock-limit-status [200] ≡اات OK
+ -> /api/v3/seller/products/digital-author-list [200] ≡اات OK
+ -> /api/v3/seller/products/digital-publishing-house-list [200] ≡اات OK
+ -> /api/v3/seller/products/restock-request-brands-list [200] ≡اات OK
+ -> /api/v3/seller/orders/list [200] ≡اات OK
+ -> /api/v3/seller/orders/{id} [200] ≡اات OK
+ -> /api/v3/seller/clearance-sale/product-list [200] ≡اات OK
+ -> /api/v3/seller/clearance-sale/config-data [200] ≡اات OK
+ -> /api/v3/seller/refund/list [200] ≡اات OK
+ -> /api/v3/seller/refund/single-item [200] ≡اات OK
+   [!] CRASH DETECTED ON: /api/v3/seller/refund/refund-details
+{"errors":[{"code":"server_error","message":"Attempt to read property \"order_id\" on null"}]}...
+ -> /api/v3/seller/refund/refund-details [500] ≡ا¤┤ Error 500
+ -> /api/v3/seller/coupon/list [200] ≡اات OK
+ -> /api/v3/seller/coupon/customers [200] ≡اات OK
+ -> /api/v3/seller/shipping/get-shipping-method [200] ≡اات OK
+ -> /api/v3/seller/shipping/selected-shipping-method [200] ≡اات OK
+ -> /api/v3/seller/shipping/all-category-cost [200] ≡اات OK
+ -> /api/v3/seller/shipping-method/list [200] ≡اات OK
+ -> /api/v3/seller/shipping-method/edit/{id} [200] ≡اات OK
+ -> /api/v3/seller/messages/list/{type} [200] ≡اات OK
+ -> /api/v3/seller/messages/get-message/{type}/{id} [200] ≡اات OK
+ -> /api/v3/seller/messages/search/{type} [200] ≡اات OK
+ -> /api/v3/seller/pos/get-categories [200] ≡اات OK
+ -> /api/v3/seller/pos/customers [200] ≡اات OK
+ -> /api/v3/seller/pos/products [200] ≡اات OK
+ -> /api/v3/seller/pos/product-list [200] ≡اات OK
+ -> /api/v3/seller/pos/get-invoice [403] ≡ااة Auth/Perm
+ -> /api/v3/seller/delivery-man/list [200] ≡اات OK
+ -> /api/v3/seller/delivery-man/details/{id} [200] ≡اات OK
+ -> /api/v3/seller/delivery-man/reviews/{id} [403] ≡ااة Auth/Perm
+ -> /api/v3/seller/delivery-man/order-list/{id} [200] ≡اات OK
+ -> /api/v3/seller/delivery-man/order-status-history/{id} [200] ≡اات OK
+ -> /api/v3/seller/delivery-man/earning/{id} [403] ≡ااة Auth/Perm
+ -> /api/v3/seller/delivery-man/collect-cash-list/{id} [403] ≡ااة Auth/Perm
+ -> /api/v3/seller/delivery-man/withdraw/list [200] ≡اات OK
+ -> /api/v3/seller/delivery-man/withdraw/details/{id} [200] ≡اات OK
+ -> /api/v3/seller/delivery-man/emergency-contact/list [200] ≡اات OK
+ -> /api/v3/seller/notification [200] ≡اات OK
+   [!] CRASH DETECTED ON: /api/v3/seller/notification/view
+{"errors":[{"code":"server_error","message":"SQLSTATE[23000]: Integrity constraint violation: 1048 Column 'notification_id' cannot be null (Connection: mysql, SQL: insert into `notification_seens` (`seller_id`, `notification_id`, `created_at`) values (6, ?, 2026-03-23 04:26:23))"}]}...
+ -> /api/v3/seller/notification/view [500] ≡ا¤┤ Error 500
+ -> /api/v3/seller/payment-information/list [200] ≡اات OK
+ -> /api/v3/seller/payment-information/withdrawal-method-list [200] ≡اات OK
+ -> /api/v3/seller/products/{seller_id}/all-products [200] ≡اات OK
+ظ£à Testing complete.
