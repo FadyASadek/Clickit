@@ -179,12 +179,11 @@ class ProductManager
         $user = Helpers::getCustomerInformation($request);
         $currentDate = date('Y-m-d H:i:s');
 
-        $reviews = Review::select('product_id', DB::raw('AVG(rating) as count'))
-            ->groupBy('product_id')->get();
-        $getReviewProductIds = [];
-        foreach ($reviews as $review) {
-            $getReviewProductIds[] = $review['product_id'];
-        }
+        $getReviewProductIds = Review::select('product_id', DB::raw('AVG(rating) as count'))
+            ->groupBy('product_id')
+            ->orderByDesc('count')
+            ->limit(200)
+            ->pluck('product_id')->toArray();
 
         $productListData = Product::active()->withSum(['orderDetails' => function ($query) {
             $query->where('delivery_status', 'delivered');
@@ -237,15 +236,15 @@ class ProductManager
         $user = Helpers::getCustomerInformation($request);
         $currentDate = date('Y-m-d H:i:s');
 
-        $orderDetails = OrderDetail::with('product')
+        $getOrderedProductIds = OrderDetail::whereHas('product', function ($q) {
+                // Ensure we only fetch active products
+                $q->active();
+            })
             ->select('product_id', DB::raw('COUNT(product_id) as count'))
             ->groupBy('product_id')
-            ->get();
-
-        $getOrderedProductIds = [];
-        foreach ($orderDetails as $detail) {
-            $getOrderedProductIds[] = $detail['product_id'];
-        }
+            ->orderByDesc('count')
+            ->limit(200)
+            ->pluck('product_id')->toArray();
 
         $productListData = Product::active()->withSum(['orderDetails' => function ($query) {
             $query->where('delivery_status', 'delivered');

@@ -169,7 +169,6 @@ class ConfigController extends Controller
             'currency_symbol_position' => getWebConfig(name: 'currency_symbol_position') ?? 'right',
             'business_mode' => getWebConfig(name: 'business_mode'),
             'language' => $languageArray,
-            'colors' => $this->cacheColorsList(),
             'unit' => Helpers::units(),
             'shipping_method' => getWebConfig(name: 'shipping_method'),
             'email_verification' => (boolean)getLoginConfig(key: 'email_verification'),

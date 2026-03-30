@@ -176,7 +176,7 @@ class Helpers
 
         $variation = [];
         $data['category_ids'] = is_array($data['category_ids']) ? $data['category_ids'] : json_decode($data['category_ids']);
-//        $data['images'] = is_array($data['images']) ? $data['images'] : json_decode($data['images']);
+        $data['images'] = is_array($data['images']) ? $data['images'] : (json_decode($data['images'], true) ?: []);
         $data['colors'] = $colors;
 //        $data['color_image'] = $colorImage;
         $data['colors_formatted'] = $colorsFormatted;

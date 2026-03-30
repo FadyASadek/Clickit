@@ -31,18 +31,24 @@ class BrandController extends Controller
         }
 
         $brands = self::getPriorityWiseBrandProductsQuery(query: $brands);
-        $limit = $request['limit'] ?? 10;
-        $offset = $request['offset'] ?? 1;
+        $limit = (int)($request['limit'] ?? 10);
+        if ($limit < 1) $limit = 10;
+        $offset = (int)($request['offset'] ?? 1);
 
-        // Apply pagination directly to SQL query instead of fetching all brands into PHP memory
         $paginator = $brands->paginate($limit, ['*'], 'page', $offset);
-        
-        return [
-            'total_size' => $paginator->total(),
-            'limit' => (int)$limit,
-            'offset' => (int)$offset,
-            'brands' => $paginator->items()
-        ];
+
+        // MOBILE FIX: Return brands as root-level JSON Array (List<Brand>) — NOT a wrapper object.
+        // Full pagination metadata goes in X-* response headers so mobile can read total/page/size
+        // without wrapping the array in an object that causes DartError TypeError.
+        return response()->json(
+            \App\Http\Resources\RestAPI\v1\BrandResource::collection($paginator->items()),
+            200
+        )->withHeaders([
+            'X-Total-Count' => $paginator->total(),
+            'X-Current-Page' => $offset,
+            'X-Per-Page' => $limit,
+            'X-Last-Page' => $paginator->lastPage(),
+        ]);
     }
 
     function getPriorityWiseBrandProductsQuery($query)
@@ -71,13 +77,15 @@ class BrandController extends Controller
 
     public function get_products(Request $request, $brand_id)
     {
-        $limit  = (int) ($request['limit']  ?? 10);
-        if ($limit < 1) $limit = 10; // Failsafe for (int) 'all'
-        if ($limit > 50) $limit = 50; // Cap to prevent artificial crashes
+        $limit = (int)($request['pageSize'] ?? $request['limit'] ?? 10);
+        if ($limit < 1) $limit = 10;
+        if ($limit > 100) $limit = 100; // Raised cap: 50→100 to support mobile page sizes
+
+        $offset = (int)($request['page'] ?? $request['offset'] ?? 1);
 
         $user = Helpers::getCustomerInformation($request);
         $products = Product::active()
-            ->without(['reviews']) // CRITICAL FIX: Prevent massive N+1 global scope loading
+            ->without(['reviews'])
             ->with(['clearanceSale' => function ($query) {
                 return $query->active();
             }])
@@ -86,22 +94,21 @@ class BrandController extends Controller
             }])
             ->where(['brand_id' => $brand_id]);
 
-        $products = $products->paginate($limit, ['*'], 'page', request()->get('page', ($request['offset'] ?? 1)));
+        $products = $products->paginate($limit, ['*'], 'page', $offset);
+        // NOTE: product_data_formatting decodes images to proper array (not product_payload_scrub
+        // which erases the images field — removed scrub here to preserve images for mobile).
         $productFinal = Helpers::product_data_formatting($products->items(), true);
-        
-        // STRICT PAYLOAD SCRUBBING: Preserve structural JSON keys to prevent Mobile App crashes
-        $productFinal = Helpers::product_payload_scrub($productFinal);
-
-        $requestedLimit = $request['limit'] ?? 'all';
-        if ($requestedLimit === 'all') {
-            return response()->json(array_values($productFinal), 200);
-        }
 
         return response()->json([
             'total_size' => $products->total(),
-            'limit' => (int)$limit,
-            'offset' => (int)($request['offset'] ?? 1),
+            'limit' => $limit,
+            'offset' => $offset,
             'products' => array_values($productFinal),
-        ], 200);
+        ], 200)->withHeaders([
+            'X-Total-Count' => $products->total(),
+            'X-Current-Page' => $offset,
+            'X-Per-Page' => $limit,
+            'X-Last-Page' => $products->lastPage(),
+        ]);
     }
 }

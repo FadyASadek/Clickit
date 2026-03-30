@@ -51,9 +51,11 @@ class ProductController extends Controller
     )
     {
         $this->middleware(function ($request, $next) {
+            $limit = $request->pageSize ?? $request->limit;
+            $offset = $request->page ?? $request->offset;
             $request->merge([
-                'limit' => $request->limit > 0 ? $request->limit : 10,
-                'offset' => $request->offset > 0 ? $request->offset : 1
+                'limit' => (int)$limit > 0 ? (int)$limit : 10,
+                'offset' => (int)$offset > 0 ? (int)$offset : 1
             ]);
             return $next($request);
         });
@@ -343,28 +345,67 @@ class ProductController extends Controller
 
     public function get_home_categories(Request $request)
     {
-        $cacheKey = 'cache_home_categories_api_list' . (str_replace(' ', '_', strtolower(app()->getLocale())));
+        // Extract scalar values BEFORE Cache::remember.
+        // Passing $request directly into a cache closure causes PHP serialization failures
+        // (Illuminate\Http\Request is not serializable by file cache driver).
+        $guestId = $request->input('guest_id', '0');
+
+        $cacheKey = 'cache_home_categories_api_list_v2_' . strtolower(app()->getLocale());
         $cacheKeys = Cache::get(CACHE_HOME_CATEGORIES_API_LIST, []);
         if (!in_array($cacheKey, $cacheKeys)) {
             $cacheKeys[] = $cacheKey;
             Cache::put(CACHE_HOME_CATEGORIES_API_LIST, $cacheKeys, CACHE_FOR_3_HOURS);
         }
 
-        $categories = Cache::remember($cacheKey, CACHE_FOR_3_HOURS, function () use ($request) {
-            $getCategories = Category::whereHas('product', function ($query) {
-                return $query->active()->with(['clearanceSale' => function ($query) {
-                    return $query->active();
-                }]);
-            })->where('home_status', true)->get();
+        $categories = Cache::remember($cacheKey, CACHE_FOR_3_HOURS, function () {
+            // Step 1: Get home categories that have at least one active product
+            $homeCategories = Category::whereHas('product', function ($q) {
+                    $q->active();
+                })
+                ->where('home_status', true)
+                ->orderByDesc('priority')
+                ->get(['id', 'name', 'slug', 'icon', 'icon_storage_type', 'parent_id', 'position', 'created_at', 'updated_at', 'home_status', 'priority']);
 
-            $getCategories->map(function ($data) use ($request) {
-                $data['products'] = Helpers::product_data_formatting(CategoryManager::products($data['id'], $request, 8), true);
-                return $data;
+            // Step 2: For each category, fetch a LIGHTWEIGHT product list (8 items, essential fields only)
+            $homeCategories->each(function ($category) {
+                $catId = '"' . $category->id . '"';
+                $products = Product::active()
+                    ->select([
+                        'id', 'name', 'slug', 'category_id', 'brand_id',
+                        'thumbnail', 'thumbnail_storage_type',
+                        'images',
+                        'unit_price', 'purchase_price',
+                        'discount', 'discount_type',
+                        'tax', 'tax_type', 'tax_model',
+                        'current_stock', 'minimum_order_qty',
+                        'added_by', 'user_id',
+                        'free_shipping',
+                        'product_type',
+                        'variant_product',
+                    ])
+                    ->where('category_ids', 'like', "%{$catId}%")
+                    ->without(['reviews'])
+                    ->withCount('reviews')
+                    ->orderByDesc('id')
+                    ->limit(8)
+                    ->get()
+                    ->map(function ($product) {
+                        // Decode images to proper JSON array (not stringified)
+                        $product->images = is_array($product->images)
+                            ? $product->images
+                            : (json_decode($product->images, true) ?: []);
+                        return $product;
+                    });
+
+                $category->products = $products;
             });
-            return $getCategories;
+
+            return $homeCategories;
         });
-        return response()->json($categories, 200);
+
+        return response()->json($categories->values(), 200);
     }
+
 
     public function get_related_products(Request $request, $id)
     {

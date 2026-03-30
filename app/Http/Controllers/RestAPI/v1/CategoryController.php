@@ -14,28 +14,30 @@ class CategoryController extends Controller
 {
     public function get_categories(Request $request): JsonResponse
     {
-        $cacheKey = 'api_v1_categories_seller_' . ($request->seller_id ?? 'all') . '_lang_' . app()->getLocale();
-        $categories = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60*60*4, function () use ($request) {
+        $sellerId = $request->seller_id ?? null;
+        $cacheKey = 'api_v1_categories_seller_' . ($sellerId ?? 'all') . '_lang_' . app()->getLocale();
+
+        $categories = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60*60*4, function () use ($sellerId) {
             $categoriesID = [];
-            if ($request->has('seller_id') && $request['seller_id'] != null) {
+            if ($sellerId != null) {
                 $categoriesID = Product::active()
-                    ->when($request->has('seller_id') && $request['seller_id'] != null && $request['seller_id'] != 0, function ($query) use ($request) {
+                    ->when($sellerId != null && $sellerId != 0, function ($query) use ($sellerId) {
                         return $query->where(['added_by' => 'seller'])
-                            ->where('user_id', $request['seller_id']);
-                    })->when($request->has('seller_id') && $request['seller_id'] != null && $request['seller_id'] == 0, function ($query) use ($request) {
+                            ->where('user_id', $sellerId);
+                    })->when($sellerId != null && $sellerId == 0, function ($query) {
                         return $query->where(['added_by' => 'admin']);
                     })->pluck('category_id');
             }
 
-            $categories = Category::when($request->has('seller_id') && $request['seller_id'] != null, function ($query) use ($categoriesID) {
+            $categories = Category::when($sellerId != null, function ($query) use ($categoriesID) {
                 return $query->whereIn('id', $categoriesID);
             })
                 ->with(['product' => function ($query) {
                     return $query->select('id', 'category_id', 'added_by', 'user_id')->active()->withCount(['orderDetails']);
                 }])
-                ->withCount(['product' => function ($query) use ($request) {
-                    return $query->active()->when($request->has('seller_id') && !empty($request['seller_id']), function ($query) use ($request) {
-                        return $query->where(['added_by' => 'seller', 'user_id' => $request['seller_id'], 'status' => '1']);
+                ->withCount(['product' => function ($query) use ($sellerId) {
+                    return $query->active()->when(!empty($sellerId), function ($query) use ($sellerId) {
+                        return $query->where(['added_by' => 'seller', 'user_id' => $sellerId, 'status' => '1']);
                     });
                 }])->with(['childes' => function ($query) {
                     return $query->with(['childes' => function ($query) {
@@ -51,7 +53,6 @@ class CategoryController extends Controller
             $categories = CategoryManager::getPriorityWiseCategorySortQuery(query: $categories);
 
             $categories->map(function ($category) {
-                // ISSUE 2: Preserve JSON structure for mobile clients without the bloat
                 $category->setRelation('product', collect());
                 return $category;
             });

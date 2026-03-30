@@ -76,6 +76,14 @@ class Seller extends Authenticatable
         'pos_status' => 'integer',
     ];
 
+    // SECURITY FIX: Never expose these sensitive fields in any API response
+    protected $hidden = [
+        'password',
+        'remember_token',
+        'auth_token',
+        'cm_firebase_token',
+    ];
+
     public function scopeApproved($query)
     {
         return $query->where(['status' => 'approved']);

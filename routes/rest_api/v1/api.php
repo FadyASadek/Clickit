@@ -18,6 +18,7 @@ use App\Http\Controllers\RestAPI\v1\CustomerRestockRequestController;
 use App\Http\Controllers\RestAPI\v1\DealController;
 use App\Http\Controllers\RestAPI\v1\DealOfTheDayController;
 use App\Http\Controllers\RestAPI\v1\FlashDealController;
+use App\Http\Controllers\RestAPI\v1\HomeController;
 use App\Http\Controllers\RestAPI\v1\MapApiController;
 use App\Http\Controllers\RestAPI\v1\NotificationController;
 use App\Http\Controllers\RestAPI\v1\OrderController;
@@ -47,6 +48,9 @@ Route::group(['namespace' => 'RestAPI\v1', 'prefix' => 'v1', 'middleware' => ['a
         Route::get('config', 'configuration');
         Route::get('business-pages', 'getBusinessPagesList');
     });
+
+    // Aggregated home-screen data — single request replaces 5 individual calls
+    Route::get('get-home-data', [HomeController::class, 'getHomeData']);
 
     Route::group(['prefix' => 'auth', 'namespace' => 'auth'], function () {
         Route::controller(PassportAuthController::class)->group(function () {
