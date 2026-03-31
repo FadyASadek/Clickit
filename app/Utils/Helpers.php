@@ -205,35 +205,112 @@ class Helpers
 
     public static function product_payload_scrub($productFinal)
     {
-        if (empty($productFinal) || (!is_array($productFinal) && !is_object($productFinal))) {
-            return [];
-        }
-
-        // STRICT PAYLOAD SCRUBBING: Preserve structural JSON keys to prevent Mobile App crashes
-        $arrayFields = [
-            'attributes', 'choice_options', 'variation', 'colors', 'colors_formatted', 
-            'images_full_url', 'color_images_full_url', 'attachment', 'images', 'color_image'
-        ];
-        $stringFields = [
-            'details', 'meta_description', 'meta_title', 'video_url', 'denied_note'
+        if (empty($productFinal)) return [];
+        
+        $fallback = 'http://127.0.0.1:8000/storage/app/public/category/2026-01-16-6969eaf409dd9.webp';
+        
+        // The ONLY fields allowed to be returned for optimal performance payload
+        $keepFields = [
+            'id', 'added_by', 'user_id', 'name', 'slug', 'product_type', 'category_ids',
+            'unit_price', 'purchase_price', 'tax', 'tax_type', 'tax_model', 'discount', 'discount_type',
+            'current_stock', 'minimum_order_qty', 'free_shipping', 'status', 'code', 'unit', 'min_qty', 'refundable',
+            'reviews_count', 'wish_list_count', 'reviews_avg_rating', 'order_details_count',
+            'seller', 'is_shop_temporary_close', 'thumbnail', 'thumbnail_full_url',
+            'variant_product', 'attributes', 'choice_options', 'variation', 'colors', 'images', 'rating',
+            'video_url', 'meta_title', 'colors_formatted', 'images_full_url', 'color_images_full_url'
         ];
         
+        $arrayFields = [
+            'images', 'attributes', 'choice_options', 'variation', 
+            'colors', 'rating', 'colors_formatted', 'category_ids', 
+            'images_full_url', 'color_images_full_url'
+        ];
+
+        $result = [];
         foreach ($productFinal as $key => $prod) {
-            if (is_object($prod)) {
-                foreach ($arrayFields as $field) $prod->{$field} = [];
-                foreach ($stringFields as $field) $prod->{$field} = '';
-                if (method_exists($prod, 'setRelation')) {
-                    $prod->setRelation('translations', collect());
-                    $prod->setRelation('reviews', collect());
-                }
-            } elseif (is_array($prod)) {
-                foreach ($arrayFields as $field) $productFinal[$key][$field] = [];
-                foreach ($stringFields as $field) $productFinal[$key][$field] = '';
-                $productFinal[$key]['translations'] = [];
-                $productFinal[$key]['reviews'] = [];
+            // Safely convert any model, collection, or stdClass into a workable associative array
+            $rowOrig = is_array($prod) ? $prod : (method_exists($prod, 'toArray') ? $prod->toArray() : json_decode(json_encode($prod), true));
+            if (!is_array($rowOrig)) {
+                $result[$key] = $prod; 
+                continue;
             }
+
+            $row = [];
+            // Extract only the essential whitelisted fields with strict type-safety
+            foreach ($keepFields as $f) {
+                $val = array_key_exists($f, $rowOrig) ? $rowOrig[$f] : null;
+                
+                if (in_array($f, $arrayFields)) {
+                    // FORCE Array: Even if it's an empty string "" from DB, it must become []
+                    if (!is_array($val)) {
+                        $parsed = json_decode((string)$val, true);
+                        $val = is_array($parsed) ? $parsed : [];
+                    }
+                } else {
+                    // Force empty string for missing/null scalars
+                    if ($val === null) {
+                        $val = '';
+                    }
+                }
+                $row[$f] = $val;
+            }
+
+            // Global Image Fallback & URL formatting
+            $thumbnail = $row['thumbnail'] ?? '';
+            $isDefault = ($thumbnail === '' || $thumbnail === 'def.png' || $thumbnail === 'null');
+            $thumbPath = storage_path('app/public/product/thumbnail/' . $thumbnail);
+            
+            $validImage = (!$isDefault && file_exists($thumbPath)) 
+                        ? asset('storage/app/public/product/thumbnail/' . $thumbnail) 
+                        : $fallback;
+            
+            $row['thumbnail'] = $validImage;
+            $row['thumbnail_full_url'] = [
+                'path' => $validImage, 
+                'status' => 200, 
+                'key' => $thumbnail
+            ];
+
+            // Integer Casting for category_ids
+            $catIdsOrig = $row['category_ids'] ?? null;
+            if ($catIdsOrig) {
+                $cats = is_string($catIdsOrig) ? json_decode($catIdsOrig, true) : (is_array($catIdsOrig) ? $catIdsOrig : json_decode(json_encode($catIdsOrig), true));
+                if (is_array($cats)) {
+                    foreach ($cats as &$c) {
+                        $isObj = is_object($c);
+                        if (is_array($c) || $isObj) {
+                            $idVal = $isObj ? ($c->id ?? null) : ($c['id'] ?? null);
+                            $posVal = $isObj ? ($c->position ?? null) : ($c['position'] ?? null);
+                            
+                            if ($idVal !== null) {
+                                if ($isObj) $c->id = (int)$idVal; else $c['id'] = (int)$idVal;
+                            }
+                            if ($posVal !== null) {
+                                if ($isObj) $c->position = (int)$posVal; else $c['position'] = (int)$posVal;
+                            }
+                        }
+                    }
+                    $row['category_ids'] = $cats;
+                }
+            }
+
+            // Lightweight Relations (Seller & Shop)
+            $sellerData = $rowOrig['seller'] ?? null;
+            if (is_array($sellerData) && isset($sellerData['shop'])) {
+                $shop = $sellerData['shop'];
+                $row['seller'] = [
+                    'shop_id'    => $shop['id'] ?? null,
+                    'shop_name'  => $shop['name'] ?? '',
+                    'shop_image' => $shop['image'] ?? '',
+                ];
+            } else {
+                $row['seller'] = null;
+            }
+
+            $result[$key] = $row;
         }
-        return $productFinal;
+
+        return $result;
     }
 
     public static function setDataFormatForJsonData($data): mixed
@@ -324,6 +401,8 @@ class Helpers
                     }
                 }
                 $data = $storage;
+                // Universally apply payload scrub to all product lists (Mobile First)
+                $data = Helpers::product_payload_scrub($data);
             } else {
                 $data = Helpers::set_data_format($data);;
             }

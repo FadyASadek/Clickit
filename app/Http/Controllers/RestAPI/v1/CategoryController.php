@@ -22,45 +22,95 @@ class CategoryController extends Controller
             if ($sellerId != null) {
                 $categoriesID = Product::active()
                     ->when($sellerId != null && $sellerId != 0, function ($query) use ($sellerId) {
-                        return $query->where(['added_by' => 'seller'])
-                            ->where('user_id', $sellerId);
+                        return $query->where(['added_by' => 'seller', 'user_id' => $sellerId]);
                     })->when($sellerId != null && $sellerId == 0, function ($query) {
                         return $query->where(['added_by' => 'admin']);
-                    })->pluck('category_id');
+                    })
+                    ->distinct()
+                    ->pluck('category_id');
             }
 
             $categories = Category::when($sellerId != null, function ($query) use ($categoriesID) {
                 return $query->whereIn('id', $categoriesID);
             })
-                ->with(['product' => function ($query) {
-                    return $query->select('id', 'category_id', 'added_by', 'user_id')->active()->withCount(['orderDetails']);
+                ->select(['id', 'name', 'slug', 'icon', 'parent_id', 'position'])
+                ->with(['childes' => function ($query) {
+                    return $query->select(['id', 'name', 'slug', 'icon', 'parent_id', 'position'])
+                                 ->where('position', 1);
                 }])
-                ->withCount(['product' => function ($query) use ($sellerId) {
-                    return $query->active()->when(!empty($sellerId), function ($query) use ($sellerId) {
-                        return $query->where(['added_by' => 'seller', 'user_id' => $sellerId, 'status' => '1']);
-                    });
-                }])->with(['childes' => function ($query) {
-                    return $query->with(['childes' => function ($query) {
-                        return $query->withCount(['subSubCategoryProduct' => function ($query) {
-                            return $query->active();
-                        }])->where('position', 2);
-                    }])->withCount(['subCategoryProduct' => function ($query) {
-                        return $query->active();
-                    }])->where('position', 1);
-                }, 'childes.childes'])
-                ->where(['position' => 0])->get();
+                ->where('position', 0)
+                ->orderByDesc('priority')
+                ->get();
 
-            $categories = CategoryManager::getPriorityWiseCategorySortQuery(query: $categories);
+            // Transform categories to array and enforce Image Fallback recursively
+            $fallback = 'http://127.0.0.1:8000/storage/app/public/category/2026-01-16-6969eaf409dd9.jpg';
 
-            $categories->map(function ($category) {
-                $category->setRelation('product', collect());
-                return $category;
-            });
+            $formatCategory = function($cat) use (&$formatCategory, $fallback) {
+                // Handle both initial Eloquent Models and recursively casted sub-arrays safely.
+                $catData = is_array($cat) ? $cat : (method_exists($cat, 'toArray') ? $cat->toArray() : (array) $cat);
+                
+                $icon = $catData['icon'] ?? '';
+                $isDefault = ($icon === '' || $icon === 'def.png' || $icon === 'null');
+                $iconPath = storage_path('app/public/category/' . $icon);
+                
+                // Return only essential data
+                $formatted = [
+                    'id'        => $catData['id'] ?? 0,
+                    'name'      => $catData['name'] ?? '',
+                    'slug'      => $catData['slug'] ?? '',
+                    'parent_id' => $catData['parent_id'] ?? 0,
+                    'position'  => $catData['position'] ?? 0,
+                    'icon'      => (!$isDefault && file_exists($iconPath))
+                                    ? asset('storage/app/public/category/' . $icon)
+                                    : $fallback,
+                ];
 
-            return $categories;
+                if (!empty($catData['childes'])) {
+                    $formatted['childes'] = array_map(function($child) use ($formatCategory) {
+                        return $formatCategory($child);
+                    }, $catData['childes']);
+                }
+
+                return $formatted;
+            };
+
+            return $categories->map(function($cat) use ($formatCategory) {
+                return $formatCategory($cat);
+            })->values();
         });
 
-        return response()->json($categories->values());
+        return response()->json($categories);
+    }
+
+    public function get_childes(Request $request, $id): JsonResponse
+    {
+        $childes = Category::where('parent_id', $id)
+            ->select(['id', 'name', 'slug', 'icon', 'parent_id', 'position'])
+            ->orderByDesc('priority')
+            ->get();
+
+        $fallback = 'http://127.0.0.1:8000/storage/app/public/category/2026-01-16-6969eaf409dd9.jpg';
+
+        $formatted = $childes->map(function ($cat) use ($fallback) {
+            $catData = is_array($cat) ? $cat : (method_exists($cat, 'toArray') ? $cat->toArray() : (array) $cat);
+            
+            $icon = $catData['icon'] ?? '';
+            $isDefault = ($icon === '' || $icon === 'def.png' || $icon === 'null');
+            $iconPath = storage_path('app/public/category/' . $icon);
+            
+            return [
+                'id'        => $catData['id'] ?? 0,
+                'name'      => $catData['name'] ?? '',
+                'slug'      => $catData['slug'] ?? '',
+                'parent_id' => $catData['parent_id'] ?? 0,
+                'position'  => $catData['position'] ?? 0,
+                'icon'      => (!$isDefault && file_exists($iconPath))
+                                ? asset('storage/app/public/category/' . $icon)
+                                : $fallback,
+            ];
+        });
+
+        return response()->json($formatted, 200);
     }
 
     public function get_products(Request $request, $id): JsonResponse
@@ -77,21 +127,36 @@ class CategoryController extends Controller
 
         $products = CategoryManager::products($id, $request, $limit);
         $productFinal = Helpers::product_data_formatting($products->items(), true);
-        
-        // STRICT PAYLOAD SCRUBBING: Preserve structural JSON keys to prevent Mobile App crashes
-        $productFinal = Helpers::product_payload_scrub($productFinal);
 
-        // ISSUE 2 FIX: Mock the legacy 'all' structural response if no limit was explicitly requested, 
-        // to prevent the mobile app from crashing by feeding it a raw Array instead of a nested Object.
-        $requestedLimit = $request['limit'] ?? 'all';
-        if ($requestedLimit === 'all') {
-            return response()->json(array_values($productFinal), 200);
-        }
+        // Fetch sub-categories to display as sub-tabs in the mobile app alongside products
+        $subCategories = \App\Models\Category::where('parent_id', $id)
+            ->select(['id', 'name', 'slug', 'icon', 'parent_id', 'position'])
+            ->orderByDesc('priority')
+            ->get();
+
+        $fallback = 'http://127.0.0.1:8000/storage/app/public/category/2026-01-16-6969eaf409dd9.jpg';
+        $formattedSub = $subCategories->map(function ($cat) use ($fallback) {
+            $catData = is_array($cat) ? $cat : (method_exists($cat, 'toArray') ? $cat->toArray() : (array) $cat);
+            $icon = $catData['icon'] ?? '';
+            $isDefault = ($icon === '' || $icon === 'def.png' || $icon === 'null');
+            $iconPath = storage_path('app/public/category/' . $icon);
+            return [
+                'id'        => $catData['id'] ?? 0,
+                'name'      => $catData['name'] ?? '',
+                'slug'      => $catData['slug'] ?? '',
+                'parent_id' => $catData['parent_id'] ?? 0,
+                'position'  => $catData['position'] ?? 0,
+                'icon'      => (!$isDefault && file_exists($iconPath))
+                                ? asset('storage/app/public/category/' . $icon)
+                                : $fallback,
+            ];
+        });
 
         return response()->json([
             'total_size' => $products->total(),
             'limit'      => $limit,
             'offset'     => $offset,
+            'sub_categories' => $formattedSub,
             'products'   => array_values($productFinal),
         ], 200);
     }

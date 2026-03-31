@@ -3242,4 +3242,5 @@ return [
 	"Review not found" => "Review not found",
 	"Product not found" => "Product not found",
 	"Order details not found" => "Order details not found",
+	"successfully removed!" => "Successfully removed!",
 ];

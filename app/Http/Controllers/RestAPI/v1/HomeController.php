@@ -18,27 +18,90 @@ use Illuminate\Support\Facades\Cache;
 
 class HomeController extends Controller
 {
+    // ─── Legacy aggregated endpoint (kept for backward compatibility) ──────────
     public function getHomeData(Request $request): JsonResponse
     {
-        $guestId = $request->get('guest_id') ?? '0';
+        $guestId  = $request->get('guest_id') ?? '0';
         $cacheKey = 'api_v1_home_data_v4_' . app()->getLocale() . '_guest_' . $guestId;
 
         $data = Cache::remember($cacheKey, 60 * 60, function () use ($guestId) {
             return [
-                'banners'           => $this->getBanners(),
-                'categories'        => CategoryHomeResource::collection($this->getTopCategories()),
-                'flash_deal'        => $this->getActiveFlashDeal($guestId),
-                'featured_deal'     => $this->getActiveFeaturedDeal($guestId),
-                'top_sellers'       => SellerHomeResource::collection($this->getTopSellers()),
-                'brands'            => $this->getBrands(),
-                'latest_products'   => ProductHomeResource::collection($this->getLatestProducts($guestId)),
+                'banners'               => $this->getBanners(),
+                'categories'            => CategoryHomeResource::collection($this->getTopCategories()),
+                'flash_deal'            => $this->getActiveFlashDeal($guestId),
+                'featured_deal'         => $this->getActiveFeaturedDeal($guestId),
+                'top_sellers'           => SellerHomeResource::collection($this->getTopSellers()),
+                'brands'                => $this->getBrands(),
+                'latest_products'       => ProductHomeResource::collection($this->getLatestProducts($guestId)),
                 'best_selling_products' => ProductHomeResource::collection($this->getBestSellingProducts($guestId)),
-                'featured_products' => ProductHomeResource::collection($this->getFeaturedProducts($guestId)),
+                'featured_products'     => ProductHomeResource::collection($this->getFeaturedProducts($guestId)),
+                'find_what_you_need'    => [],
+                'just_for_you'          => [],
+                'recommended_products'  => [],
             ];
         });
 
         return response()->json($data, 200);
     }
+
+    // ─── Endpoint 1: Essential (target <100ms) ─────────────────────────────────
+    // Returns: banners, categories, flash_deal
+    public function getEssentialData(Request $request): JsonResponse
+    {
+        $guestId  = $request->get('guest_id') ?? '0';
+        $cacheKey = 'api_v1_home_essential_' . app()->getLocale() . '_guest_' . $guestId;
+
+        $data = Cache::remember($cacheKey, 60 * 60, function () use ($guestId) {
+            return [
+                'banners'    => $this->getBanners(),
+                'categories' => CategoryHomeResource::collection($this->getTopCategories()),
+                'flash_deal' => $this->getActiveFlashDeal($guestId),
+            ];
+        });
+
+        return response()->json($data, 200);
+    }
+
+    // ─── Endpoint 2: Discovery (target <200ms) ─────────────────────────────────
+    // Returns: top_sellers, brands, featured_deal
+    public function getDiscoveryData(Request $request): JsonResponse
+    {
+        $guestId  = $request->get('guest_id') ?? '0';
+        $cacheKey = 'api_v1_home_discovery_' . app()->getLocale() . '_guest_' . $guestId;
+
+        $data = Cache::remember($cacheKey, 60 * 60, function () use ($guestId) {
+            return [
+                'top_sellers'   => SellerHomeResource::collection($this->getTopSellers()),
+                'brands'        => $this->getBrands(),
+                'featured_deal' => $this->getActiveFeaturedDeal($guestId),
+            ];
+        });
+
+        return response()->json($data, 200);
+    }
+
+    // ─── Endpoint 3: Products (target <400ms) ──────────────────────────────────
+    // Returns: latest_products, featured_products, best_selling_products, home_categories
+    public function getProductsData(Request $request): JsonResponse
+    {
+        $guestId  = $request->get('guest_id') ?? '0';
+        $cacheKey = 'api_v1_home_products_' . app()->getLocale() . '_guest_' . $guestId;
+
+        $data = Cache::remember($cacheKey, 60 * 60, function () use ($guestId) {
+            return [
+                'latest_products'       => ProductHomeResource::collection($this->getLatestProducts($guestId)),
+                'featured_products'     => ProductHomeResource::collection($this->getFeaturedProducts($guestId)),
+                'best_selling_products' => ProductHomeResource::collection($this->getBestSellingProducts($guestId)),
+                'home_categories'       => $this->getHomeCategories(),
+                'find_what_you_need'    => [],
+                'just_for_you'          => [],
+                'recommended_products'  => [],
+            ];
+        });
+
+        return response()->json($data, 200);
+    }
+
 
     private function getBanners(): array
     {
