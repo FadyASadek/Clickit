@@ -7,6 +7,8 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Utils\CategoryManager;
 use App\Utils\Helpers;
+use App\Http\Resources\RestAPI\v1\CategoryThinResource;
+use App\Http\Resources\RestAPI\v1\ProductCategoryResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,52 +16,81 @@ class CategoryController extends Controller
 {
     public function get_categories(Request $request): JsonResponse
     {
-        $cacheKey = 'api_v1_categories_seller_' . ($request->seller_id ?? 'all') . '_lang_' . app()->getLocale();
-        $categories = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60*60*4, function () use ($request) {
+        $sellerId = $request->seller_id ?? null;
+        $cacheKey = 'api_v1_categories_seller_' . ($sellerId ?? 'all') . '_lang_' . app()->getLocale();
+
+        $categories = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60*60*4, function () use ($sellerId) {
             $categoriesID = [];
-            if ($request->has('seller_id') && $request['seller_id'] != null) {
+            if ($sellerId != null) {
                 $categoriesID = Product::active()
-                    ->when($request->has('seller_id') && $request['seller_id'] != null && $request['seller_id'] != 0, function ($query) use ($request) {
-                        return $query->where(['added_by' => 'seller'])
-                            ->where('user_id', $request['seller_id']);
-                    })->when($request->has('seller_id') && $request['seller_id'] != null && $request['seller_id'] == 0, function ($query) use ($request) {
+                    ->when($sellerId != null && $sellerId != 0, function ($query) use ($sellerId) {
+                        return $query->where(['added_by' => 'seller', 'user_id' => $sellerId]);
+                    })->when($sellerId != null && $sellerId == 0, function ($query) {
                         return $query->where(['added_by' => 'admin']);
-                    })->pluck('category_id');
+                    })
+                    ->distinct()
+                    ->pluck('category_id');
             }
 
-            $categories = Category::when($request->has('seller_id') && $request['seller_id'] != null, function ($query) use ($categoriesID) {
+            $categories = Category::when($sellerId != null, function ($query) use ($categoriesID) {
                 return $query->whereIn('id', $categoriesID);
             })
-                ->with(['product' => function ($query) {
-                    return $query->select('id', 'category_id', 'added_by', 'user_id')->active()->withCount(['orderDetails']);
+                ->select(['id', 'name', 'slug', 'icon', 'parent_id', 'position'])
+                ->with(['childes' => function ($query) {
+                    return $query->select(['id', 'name', 'slug', 'icon', 'parent_id', 'position'])
+                                 ->where('position', 1);
                 }])
-                ->withCount(['product' => function ($query) use ($request) {
-                    return $query->active()->when($request->has('seller_id') && !empty($request['seller_id']), function ($query) use ($request) {
-                        return $query->where(['added_by' => 'seller', 'user_id' => $request['seller_id'], 'status' => '1']);
-                    });
-                }])->with(['childes' => function ($query) {
-                    return $query->with(['childes' => function ($query) {
-                        return $query->withCount(['subSubCategoryProduct' => function ($query) {
-                            return $query->active();
-                        }])->where('position', 2);
-                    }])->withCount(['subCategoryProduct' => function ($query) {
-                        return $query->active();
-                    }])->where('position', 1);
-                }, 'childes.childes'])
-                ->where(['position' => 0])->get();
+                ->where('position', 0)
+                ->orderByDesc('priority')
+                ->get();
 
-            $categories = CategoryManager::getPriorityWiseCategorySortQuery(query: $categories);
+            // Transform categories to array and enforce Image Fallback recursively
+            $formatCategory = function($cat) use (&$formatCategory) {
+                // Handle both initial Eloquent Models and recursively casted sub-arrays safely.
+                $catData = is_array($cat) ? $cat : (method_exists($cat, 'toArray') ? $cat->toArray() : (array) $cat);
+                
+                $icon = $catData['icon'] ?? '';
+                $isDefault = ($icon === '' || $icon === 'def.png' || $icon === 'null');
+                
+                // Return only essential data
+                $formatted = [
+                    'id'        => $catData['id'] ?? 0,
+                    'name'      => $catData['name'] ?? '',
+                    'slug'      => $catData['slug'] ?? '',
+                    'parent_id' => $catData['parent_id'] ?? 0,
+                    'position'  => $catData['position'] ?? 0,
+                    'icon'      => $isDefault
+                                    ? null
+                                    : asset('storage/app/public/category/' . $icon),
+                ];
 
-            $categories->map(function ($category) {
-                // ISSUE 2: Preserve JSON structure for mobile clients without the bloat
-                $category->setRelation('product', collect());
-                return $category;
-            });
+                if (!empty($catData['childes'])) {
+                    $formatted['childes'] = array_map(function($child) use ($formatCategory) {
+                        return $formatCategory($child);
+                    }, $catData['childes']);
+                }
 
-            return $categories;
+                return $formatted;
+            };
+
+            return $categories->map(function($cat) use ($formatCategory) {
+                return $formatCategory($cat);
+            })->values();
         });
 
-        return response()->json($categories->values());
+        return response()->json($categories);
+    }
+
+    public function get_childes(Request $request, $id): JsonResponse
+    {
+        $childes = Category::where('parent_id', $id)
+            ->select(['id', 'name', 'slug', 'icon', 'parent_id', 'position'])
+            ->orderByDesc('priority')
+            ->get();
+
+        $formatted = CategoryThinResource::collection($childes);
+
+        return response()->json($formatted, 200);
     }
 
     public function get_products(Request $request, $id): JsonResponse
@@ -75,23 +106,22 @@ class CategoryController extends Controller
         $offset = (int) ($request['offset'] ?? 1);
 
         $products = CategoryManager::products($id, $request, $limit);
-        $productFinal = Helpers::product_data_formatting($products->items(), true);
-        
-        // STRICT PAYLOAD SCRUBBING: Preserve structural JSON keys to prevent Mobile App crashes
-        $productFinal = Helpers::product_payload_scrub($productFinal);
+        $productFinal = ProductCategoryResource::collection($products->items());
 
-        // ISSUE 2 FIX: Mock the legacy 'all' structural response if no limit was explicitly requested, 
-        // to prevent the mobile app from crashing by feeding it a raw Array instead of a nested Object.
-        $requestedLimit = $request['limit'] ?? 'all';
-        if ($requestedLimit === 'all') {
-            return response()->json(array_values($productFinal), 200);
-        }
+        // Fetch sub-categories to display as sub-tabs in the mobile app alongside products
+        $subCategories = \App\Models\Category::where('parent_id', $id)
+            ->select(['id', 'name', 'slug', 'icon', 'parent_id', 'position'])
+            ->orderByDesc('priority')
+            ->get();
+
+        $formattedSub = CategoryThinResource::collection($subCategories);
 
         return response()->json([
             'total_size' => $products->total(),
             'limit'      => $limit,
             'offset'     => $offset,
-            'products'   => array_values($productFinal),
+            'sub_categories' => $formattedSub,
+            'products'   => $productFinal,
         ], 200);
     }
 

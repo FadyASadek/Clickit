@@ -107,7 +107,10 @@ class User extends Authenticatable
      * @var array
      */
     protected $hidden = [
-        'password', 'remember_token',
+        'password',
+        'remember_token',
+        'cm_firebase_token',
+        'temporary_token',
     ];
 
     /**

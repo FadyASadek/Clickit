@@ -114,7 +114,10 @@ class AppServiceProvider extends ServiceProvider
                         'meta_description' => substr(strip_tags(str_replace('&nbsp;', ' ', (getWebConfig(name: 'about_us') ?? ''))),0,160),
                     ];
 
-                    if ((!Request::is('admin') && !Request::is('admin/*') && !Request::is('seller/*') && !Request::is('vendor/*')) || Request::is('vendor/auth/registration/*')) {
+                    if (
+                        !Request::is('api/*') &&  // PERF FIX: Skip ALL web-only queries for API routes
+                        ((!Request::is('admin') && !Request::is('admin/*') && !Request::is('seller/*') && !Request::is('vendor/*')) || Request::is('vendor/auth/registration/*'))
+                    ) {
                         $userId = Auth::guard('customer')->user() ? Auth::guard('customer')->id() : 0;
                         $flashDeal = ProductManager::getPriorityWiseFlashDealsProductsQuery(userId: $userId);
 
