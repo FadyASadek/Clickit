@@ -25,13 +25,11 @@ class CategoryManager
     public static function products($category_id, $request = null, $dataLimit = null)
     {
         $user = Helpers::getCustomerInformation($request);
-        $idString = '"id":"' . $category_id . '"';
-        $idInt1 = '"id":' . $category_id . ',';
-        $idInt2 = '"id":' . $category_id . '}';
+        $category_id = (int) $category_id;
 
-        // CRITICAL FIX: Load only what the product grid card needs, but DO NOT REMOVE structural relation keys.
-        // We stripped these earlier thinking they caused the 122MB, but it was the 21,000 row unpaginated fetch.
-        // Restoring them to prevent mobile KeyNotFoundExceptions.
+        // FIX: Use direct integer column matching (same approach as Web controllers)
+        // instead of LIKE on the category_ids JSON column which fails due to
+        // string/integer format mismatches in the serialized JSON.
         $products = Product::without(['reviews'])
             ->with([
                 'rating',
@@ -50,10 +48,10 @@ class CategoryManager
             ])
             ->withAvg('reviews', 'rating')
             ->active()
-            ->where(function ($query) use ($idString, $idInt1, $idInt2) {
-                $query->where('category_ids', 'like', "%{$idString}%")
-                    ->orWhere('category_ids', 'like', "%{$idInt1}%")
-                    ->orWhere('category_ids', 'like', "%{$idInt2}%");
+            ->where(function ($query) use ($category_id) {
+                $query->where('category_id', $category_id)
+                    ->orWhere('sub_category_id', $category_id)
+                    ->orWhere('sub_sub_category_id', $category_id);
             })
             ->when($request->has('search') && !empty($request['search']), function ($query) use ($request) {
                 $searchKey = $request['search'];
