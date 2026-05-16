@@ -18,6 +18,7 @@ use App\Http\Controllers\RestAPI\v1\CustomerRestockRequestController;
 use App\Http\Controllers\RestAPI\v1\DealController;
 use App\Http\Controllers\RestAPI\v1\DealOfTheDayController;
 use App\Http\Controllers\RestAPI\v1\FlashDealController;
+use App\Http\Controllers\RestAPI\v1\HomeController;
 use App\Http\Controllers\RestAPI\v1\MapApiController;
 use App\Http\Controllers\RestAPI\v1\NotificationController;
 use App\Http\Controllers\RestAPI\v1\OrderController;
@@ -46,6 +47,16 @@ Route::group(['namespace' => 'RestAPI\v1', 'prefix' => 'v1', 'middleware' => ['a
     Route::controller(ConfigController::class)->group(function () {
         Route::get('config', 'configuration');
         Route::get('business-pages', 'getBusinessPagesList');
+    });
+
+    // Aggregated home-screen data — single request replaces 5 individual calls (legacy, kept for backward compatibility)
+    Route::get('get-home-data', [HomeController::class, 'getHomeData']);
+
+    // Specialized home endpoints — fetch above-the-fold data in 3 parallel requests
+    Route::prefix('home')->group(function () {
+        Route::get('essential',  [HomeController::class, 'getEssentialData']);  // banners, categories, flash_deal   (<100ms)
+        Route::get('discovery',  [HomeController::class, 'getDiscoveryData']);  // top_sellers, brands, featured_deal (<200ms)
+        Route::get('products',   [HomeController::class, 'getProductsData']);   // latest, featured, best_selling     (<400ms)
     });
 
     Route::group(['prefix' => 'auth', 'namespace' => 'auth'], function () {
@@ -210,6 +221,7 @@ Route::group(['namespace' => 'RestAPI\v1', 'prefix' => 'v1', 'middleware' => ['a
         Route::group(['prefix' => 'categories'], function () {
             Route::controller(CategoryController::class)->group(function () {
                 Route::get('/', 'get_categories');
+                Route::get('childes/{category_id}', 'get_childes');
                 Route::get('products/{category_id}', 'get_products');
                 Route::get('/find-what-you-need', 'find_what_you_need');
             });

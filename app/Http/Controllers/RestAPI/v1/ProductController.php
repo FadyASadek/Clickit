@@ -22,6 +22,8 @@ use App\Models\ShippingMethod;
 use App\Models\Shop;
 use App\Models\StockClearanceProduct;
 use App\Models\Wishlist;
+use App\Http\Resources\RestAPI\v1\ProductFullResource;
+use App\Http\Resources\RestAPI\v1\ProductThinResource;
 use App\Services\ProductService;
 use App\Traits\CacheManagerTrait;
 use App\Traits\FileManagerTrait;
@@ -51,9 +53,11 @@ class ProductController extends Controller
     )
     {
         $this->middleware(function ($request, $next) {
+            $limit = $request->pageSize ?? $request->limit;
+            $offset = $request->page ?? $request->offset;
             $request->merge([
-                'limit' => $request->limit > 0 ? $request->limit : 10,
-                'offset' => $request->offset > 0 ? $request->offset : 1
+                'limit' => (int)$limit > 0 ? (int)$limit : 10,
+                'offset' => (int)$offset > 0 ? (int)$offset : 1
             ]);
             return $next($request);
         });
@@ -288,45 +292,43 @@ class ProductController extends Controller
         $user = Helpers::getCustomerInformation($request);
 
         $product = Product::active()
-            ->without(['reviews']) // ISSUE 2: Prevent global scope from fetching UNLIMITED reviews into memory
-            ->with(['seller.shop', 'tags', 'digitalVariation', 'clearanceSale' => function ($query) {
-                return $query->active();
-            }])
+            ->without(['reviews'])
+            ->with([
+                'seller.shop:id,seller_id,name',
+                'category:id,name',
+                'digitalVariation',
+            ])
             ->withCount(['reviews', 'wishList' => function ($query) use ($user) {
                 $query->where('customer_id', $user != 'offline' ? $user->id : '0');
             }])
-            ->where(['slug' => $slug])->first();
+            ->withAvg('reviews', 'rating')
+            ->where(['slug' => $slug])
+            ->first();
 
-        if (isset($product)) {
-            $reviewsCount = $product->reviews_count ?? 0;
-            $restockRequestedIds = $this->restockProductRepo->getListWhere(filters: ['product_id' => $product['id']], dataLimit: 'all')?->pluck('id')->toArray() ?? [];
-
-            $product = Helpers::product_data_formatting($product, false);
-            $averageRating = \App\Models\Review::where('product_id', $product['id'])->avg('rating') ?? 0;
-            $product['average_review'] = round($averageRating, 2);
-
-            $product['reviews_count'] = $reviewsCount;
-            $product['digital_product_authors_names'] = $this->productService->getProductAuthorsInfo(product: $product)['names'];
-            $product['digital_product_publishing_house_names'] = $this->productService->getProductPublishingHouseInfo(product: $product)['names'];
-
-            if ($user != 'offline' && count($restockRequestedIds) > 0) {
-
-                $restockCustomerRequestedList = $this->restockProductCustomerRepo->getListWhere(
-                    filters: ['customer_id' => $user->id, 'restock_product_ids' => $restockRequestedIds]
-                )->pluck('variant')->toArray();
-
-                $product['restock_requested_list'] = $restockCustomerRequestedList;
-                $product['is_restock_requested'] = count($restockCustomerRequestedList) > 0 ? 1 : 0;
-            } else {
-                $product['restock_requested_list'] = [];
-                $product['is_restock_requested'] = 0;
-            }
-
-            // ISSUE 2: Preserve JSON structure for mobile clients without the bloat
-            $product->setRelation('translations', collect());
-            $product->setRelation('reviews', collect());
+        if (!$product) {
+            return response()->json([
+                'errors' => [['code' => 'product-001', 'message' => translate('product_not_found')]]
+            ], 404);
         }
-        return response()->json($product, 200);
+
+        // ─── Related products (lightweight, max 4) ───
+        $relatedCacheKey = 'related_products_thin_api_4_' . $product->id;
+        $relatedProducts = \Illuminate\Support\Facades\Cache::remember($relatedCacheKey, now()->addMinutes(30), function () use ($product) {
+            return Product::active()
+                ->where('category_id', $product->category_id)
+                ->where('id', '!=', $product->id)
+                ->select(['id', 'name', 'slug', 'thumbnail', 'unit_price', 'purchase_price', 'discount', 'discount_type', 'user_id'])
+                ->withCount('reviews')
+                ->withAvg('reviews', 'rating')
+                ->limit(4)
+                ->get();
+        });
+
+        // Attach related products to the model so the resource can access it
+        $product->related_products = $relatedProducts;
+
+        // Use the new optimal resource designed for mobile
+        return response()->json(new \App\Http\Resources\RestAPI\v1\ProductDetailsResource($product), 200);
     }
 
     public function getBestSellingProducts(Request $request): JsonResponse
@@ -343,51 +345,90 @@ class ProductController extends Controller
 
     public function get_home_categories(Request $request)
     {
-        $cacheKey = 'cache_home_categories_api_list' . (str_replace(' ', '_', strtolower(app()->getLocale())));
+        // Extract scalar values BEFORE Cache::remember.
+        // Passing $request directly into a cache closure causes PHP serialization failures
+        // (Illuminate\Http\Request is not serializable by file cache driver).
+        $guestId = $request->input('guest_id', '0');
+
+        $cacheKey = 'cache_home_categories_api_list_v2_' . strtolower(app()->getLocale());
         $cacheKeys = Cache::get(CACHE_HOME_CATEGORIES_API_LIST, []);
         if (!in_array($cacheKey, $cacheKeys)) {
             $cacheKeys[] = $cacheKey;
             Cache::put(CACHE_HOME_CATEGORIES_API_LIST, $cacheKeys, CACHE_FOR_3_HOURS);
         }
 
-        $categories = Cache::remember($cacheKey, CACHE_FOR_3_HOURS, function () use ($request) {
-            $getCategories = Category::whereHas('product', function ($query) {
-                return $query->active()->with(['clearanceSale' => function ($query) {
-                    return $query->active();
-                }]);
-            })->where('home_status', true)->get();
+        $categories = Cache::remember($cacheKey, CACHE_FOR_3_HOURS, function () {
+            // Step 1: Get home categories that have at least one active product
+            $homeCategories = Category::whereHas('product', function ($q) {
+                    $q->active();
+                })
+                ->where('home_status', true)
+                ->orderByDesc('priority')
+                ->get(['id', 'name', 'slug', 'icon', 'icon_storage_type', 'parent_id', 'position', 'created_at', 'updated_at', 'home_status', 'priority']);
 
-            $getCategories->map(function ($data) use ($request) {
-                $data['products'] = Helpers::product_data_formatting(CategoryManager::products($data['id'], $request, 8), true);
-                return $data;
+            // Step 2: For each category, fetch a LIGHTWEIGHT product list (8 items, essential fields only)
+            $homeCategories->each(function ($category) {
+                $catId = '"id":"' . $category->id . '"';
+                $products = Product::active()
+                    ->select([
+                        'id', 'name', 'slug', 'category_id', 'brand_id',
+                        'thumbnail', 'thumbnail_storage_type',
+                        'images',
+                        'unit_price', 'purchase_price',
+                        'discount', 'discount_type',
+                        'tax', 'tax_type', 'tax_model',
+                        'current_stock', 'minimum_order_qty',
+                        'added_by', 'user_id',
+                        'free_shipping',
+                        'product_type',
+                        'variant_product',
+                    ])
+                    ->where('category_ids', 'like', "%{$catId}%")
+                    ->without(['reviews'])
+                    ->withCount('reviews')
+                    ->orderByDesc('id')
+                    ->limit(8)
+                    ->get()
+                    ->map(function ($product) {
+                        // Decode images to proper JSON array (not stringified)
+                        $product->images = is_array($product->images)
+                            ? $product->images
+                            : (json_decode($product->images, true) ?: []);
+                        return $product;
+                    });
+
+                $category->products = $products;
             });
-            return $getCategories;
+
+            return $homeCategories;
         });
-        return response()->json($categories, 200);
+
+        return response()->json($categories->values(), 200);
     }
+
 
     public function get_related_products(Request $request, $id)
     {
-        if (Product::find($id)) {
-            $products = ProductManager::get_related_products($id, $request);
-            $products = Helpers::product_data_formatting($products, true);
-            
-            // ISSUE 2: Preserve JSON structure for mobile clients without the bloat
-            foreach ($products as $key => $prod) {
-                if (is_object($prod) && method_exists($prod, 'setRelation')) {
-                    $prod->setRelation('translations', collect());
-                    $prod->setRelation('reviews', collect());
-                } elseif (is_array($prod)) {
-                    $products[$key]['translations'] = [];
-                    $products[$key]['reviews'] = [];
-                }
-            }
-
-            return response()->json($products, 200);
+        $product = Product::select('id', 'category_id')->find($id);
+        if (!$product) {
+            return response()->json([
+                'errors' => ['code' => 'product-001', 'message' => translate('product_not_found')]
+            ], 404);
         }
-        return response()->json([
-            'errors' => ['code' => 'product-001', 'message' => translate('product_not_found')]
-        ], 404);
+
+        $cacheKey = 'api_related_products_' . $id;
+        $products = \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addMinutes(60), function () use ($product, $id) {
+            return Product::active()
+                ->where('category_id', $product->category_id)
+                ->where('id', '!=', $id)
+                ->select(['id', 'name', 'slug', 'thumbnail', 'unit_price', 'purchase_price', 'discount', 'discount_type', 'user_id'])
+                ->withCount('reviews')
+                ->withAvg('reviews', 'rating')
+                ->limit(4)
+                ->get();
+        });
+
+        return response()->json(ProductThinResource::collection($products), 200);
     }
 
     public function get_product_reviews($id, Request $request)
@@ -399,16 +440,21 @@ class ProductController extends Controller
         $offset = (int) ($request['offset'] ?? 1);
         $skip = ($offset - 1) * $limit;
         
-        $reviews = Review::with(['customer', 'reply'])
-            ->where(['product_id' => $id])
-            ->latest()
-            ->take($limit)
-            ->skip($skip < 0 ? 0 : $skip)
-            ->get();
-            
-        foreach ($reviews as $item) {
-            $item['attachment_full_url'] = $item->attachment_full_url;
-        }
+        $cacheKey = "api_product_reviews_{$id}_{$limit}_{$offset}";
+        $reviews = \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addMinutes(15), function () use ($id, $limit, $skip) {
+            $data = Review::with(['customer', 'reply'])
+                ->where(['product_id' => $id])
+                ->latest()
+                ->take($limit)
+                ->skip($skip < 0 ? 0 : $skip)
+                ->get();
+                
+            foreach ($data as $item) {
+                $item['attachment_full_url'] = $item->attachment_full_url;
+            }
+            return $data;
+        });
+
         return response()->json($reviews, 200);
     }
 
@@ -465,9 +511,13 @@ class ProductController extends Controller
     public function counter($product_id)
     {
         try {
-            $countOrder = OrderDetail::where('product_id', $product_id)->count();
-            $countWishlist = Wishlist::where('product_id', $product_id)->count();
-            return response()->json(['order_count' => $countOrder, 'wishlist_count' => $countWishlist], 200);
+            $counters = \Illuminate\Support\Facades\Cache::remember("api_product_counters_{$product_id}", now()->addMinutes(15), function () use ($product_id) {
+                return [
+                    'order_count' => OrderDetail::where('product_id', $product_id)->count(),
+                    'wishlist_count' => Wishlist::where('product_id', $product_id)->count()
+                ];
+            });
+            return response()->json($counters, 200);
         } catch (\Exception $e) {
             return response()->json(['errors' => $e], 403);
         }

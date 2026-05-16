@@ -15,7 +15,8 @@ class FlashDealController extends Controller
 {
     public function getFlashDeal(): JsonResponse
     {
-        $flashDeal = ProductManager::getPriorityWiseFlashDealsProductsQuery()['flashDeal'];
+        $flashDeal = ProductManager::getPriorityWiseFlashDealsProductsQuery()['flashDeal'] ?? null;
+        // Return null explicitly — mobile can null-check. {} occurs when null is cast to object.
         return response()->json($flashDeal, 200);
     }
 
@@ -30,9 +31,11 @@ class FlashDealController extends Controller
         $products = ProductManager::getPriorityWiseFlashDealsProductsQuery(id: $deal_id, userId: $userId)['flashDealProducts'];
         $products = collect($products)->take($limit);
         
-        $productFinal = Helpers::product_data_formatting($products, true);
-        $productFinal = Helpers::product_payload_scrub($productFinal);
+        
+        // Skip the expensive `product_data_formatting` compute since `product_payload_scrub` 
+        // will overwrite all its work (colors, variations, etc.) with empty arrays anyway.
+        $productFinal = Helpers::product_payload_scrub($products);
 
-        return response()->json(array_values($productFinal), 200);
+        return response()->json(array_values((array)$productFinal), 200);
     }
 }

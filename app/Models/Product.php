@@ -411,7 +411,8 @@ class Product extends Model
     public function getColorImagesFullUrlAttribute(): array
     {
         $images = [];
-        $value = is_array($this->color_image) ? $this->color_image : json_decode($this->color_image);
+        $val = $this->color_image;
+        $value = is_array($val) ? $val : json_decode(is_string($val) && $val !== '' ? $val : '[]');
         if ($value) {
             foreach ($value as $item) {
                 $item = (array)$item;
@@ -427,7 +428,8 @@ class Product extends Model
     public function getImagesFullUrlAttribute(): array
     {
         $images = [];
-        $value = is_array($this->images) ? $this->images : json_decode($this->images);
+        $val = $this->images;
+        $value = is_array($val) ? $val : json_decode(is_string($val) && $val !== '' ? $val : '[]');
         if ($value) {
             foreach ($value as $item) {
                 $item = isset($item->image_name) ? (array)$item : ['image_name' => $item, 'storage' => 'public'];

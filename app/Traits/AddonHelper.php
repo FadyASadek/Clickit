@@ -56,24 +56,27 @@ trait AddonHelper
 
     public function getPaymentPublishStatus(): int
     {
-        $dir = 'Modules'; // Update the directory path to Modules/Gateways
-        $directories = self::getDirectories($dir);
+        // PERF FIX: Cache result for 3 hours to avoid filesystem scan on EVERY request
+        return (int)\Illuminate\Support\Facades\Cache::remember('payment_publish_status', 60 * 60 * 3, function () {
+            $dir = 'Modules'; // Update the directory path to Modules/Gateways
+            $directories = self::getDirectories($dir);
 
-        $addons = [];
-        foreach ($directories as $directory) {
-            $subDirectories = self::getDirectories($dir . '/' . $directory); // Use $dir instead of 'Modules/'
-            if($directory == 'Gateways'){
-                if (in_array('Addon', $subDirectories)) {
-                    $addons[] = $dir . '/' . $directory; // Use $dir instead of 'Modules/'
+            $addons = [];
+            foreach ($directories as $directory) {
+                $subDirectories = self::getDirectories($dir . '/' . $directory); // Use $dir instead of 'Modules/'
+                if($directory == 'Gateways'){
+                    if (in_array('Addon', $subDirectories)) {
+                        $addons[] = $dir . '/' . $directory; // Use $dir instead of 'Modules/'
+                    }
                 }
             }
-        }
 
-        foreach ($addons as $item) {
-            $fullData = include($item . '/Addon/info.php');
-            return (int)$fullData['is_published'];
-        }
-        return 0;
+            foreach ($addons as $item) {
+                $fullData = include($item . '/Addon/info.php');
+                return (int)$fullData['is_published'];
+            }
+            return 0;
+        });
     }
 
 
